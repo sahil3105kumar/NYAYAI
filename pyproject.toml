@@ -44,6 +44,19 @@ dependencies = [
     "sqlalchemy>=2.0.51",
     "greenlet>=3.5.3",
     # ------------------------
+    # Graph RAG & LLM Agent
+    # ------------------------
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-mistralai>=0.2.0",
+    "langchain-neo4j>=0.2.0",
+    "langchain-experimental>=0.3.0",
+    "langchain-text-splitters>=0.3.0",
+    "langgraph>=0.2.0",
+    "neo4j>=5.0.0",
+    "pymupdf4llm>=0.0.10",
+    "python-dotenv>=1.0.0",
+    # ------------------------
     # Utilities
     # ------------------------
     "rapidfuzz>=3.14.5",
@@ -54,6 +67,8 @@ dependencies = [
     "pytest",
     "dvc>=3.67.1",
     "httpx>=0.28.1",
+    "nltk>=3.8.0",
+    "requests>=2.31.0",
 ]
 
 [tool.uv.sources]
