@@ -1,10 +1,11 @@
 /*
-  upload / poll / fetch result - matches the real backend flow:
-  POST /upload -> {job_id}, GET /status/{job_id} -> {status}, GET /result/{job_id} -> report.
+  Extended API client — adds helpers for the chat agent, PDF ingestion,
+  and InLegalBERT analysis endpoints alongside the existing OCR flow.
 */
 
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
+// ─── Existing OCR Flow ───────────────────────────────────────────────
 
 export async function uploadPdf(file) {
   const formData = new FormData()
@@ -55,5 +56,84 @@ export async function fetchResult(jobId) {
 }
 
 
+// ─── Chat Agent ──────────────────────────────────────────────────────
+
+export async function sendChatMessage(message, threadId = 'default_session') {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, thread_id: threadId }),
+  })
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    throw new Error(data.detail || `chat failed (${res.status})`)
+  }
+
+  return { reply: data.reply, threadId: data.thread_id }
+}
 
 
+// ─── PDF → Neo4j Ingestion ──────────────────────────────────────────
+
+export async function ingestPDFForGraph(pdfPath) {
+  const res = await fetch(`${API_BASE_URL}/api/v1/chat/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pdf_path: pdfPath }),
+  })
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    throw new Error(data.detail || `ingestion failed (${res.status})`)
+  }
+
+  return data
+}
+
+
+// ─── InLegalBERT Analysis ────────────────────────────────────────────
+
+export async function analyzeLSI(text) {
+  const res = await fetch(`${API_BASE_URL}/analyze/lsi`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `LSI analysis failed (${res.status})`)
+  return data
+}
+
+export async function analyzeRR(text) {
+  const res = await fetch(`${API_BASE_URL}/analyze/rr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `RR analysis failed (${res.status})`)
+  return data
+}
+
+export async function analyzeCJPE(text) {
+  const res = await fetch(`${API_BASE_URL}/analyze/cjpe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `CJPE analysis failed (${res.status})`)
+  return data
+}
+
+export async function analyzeFull(text) {
+  const res = await fetch(`${API_BASE_URL}/analyze/full`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.detail || `full analysis failed (${res.status})`)
+  return data
+}

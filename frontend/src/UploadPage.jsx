@@ -21,7 +21,7 @@ async function isPdfFile(file) {
   }
 }
 
-export default function UploadPage({ onFileSelected, status, error }) {
+export default function UploadPage({ onFileSelected, status, error, onGoHome }) {
   const inputRef = useRef(null)
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -36,6 +36,12 @@ export default function UploadPage({ onFileSelected, status, error }) {
 
   return (
     <div className="upload-page">
+      {onGoHome && (
+        <button className="upload-home-btn" onClick={onGoHome} id="upload-home">
+          Back to NyayAI Home
+        </button>
+      )}
+
       <div className="upload-page-intro">
         <span className="upload-eyebrow">NyayAI</span>
         <h1>Check a document before it's filed.</h1>

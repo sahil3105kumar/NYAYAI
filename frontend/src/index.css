@@ -7,23 +7,55 @@
   renderer/colors.py.
 */
 
-:root {
-  --bg: #edeee9;
-  --surface: #ffffff;
-  --ink: #1b1e24;
-  --ink-muted: #5b6270;
-  --accent: #26415c;
-  --accent-soft: #dce3ea;
-  --hairline: #d8d6ce;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
+:root {
+  --bg: #0f1117;
+  --bg-elevated: #161821;
+  --surface: #1c1e2a;
+  --surface-hover: #252838;
+  --ink: #e8eaed;
+  --ink-muted: #8b8fa3;
+  --ink-subtle: #5c6078;
+  --accent: #6c8cff;
+  --accent-soft: rgba(108, 140, 255, 0.12);
+  --accent-glow: rgba(108, 140, 255, 0.25);
+  --accent-vivid: #8ba8ff;
+  --hairline: #2a2d3e;
+  --hairline-light: #353850;
+
+  /* Status colors */
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+
+  /* Error detection colors (matching backend) */
   --error-spelling: #ffd700;
   --error-grammar: #ff8c00;
   --error-citation: #ff4444;
   --error-entity: #8a2be2;
 
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #6c8cff 0%, #a78bfa 100%);
+  --gradient-surface: linear-gradient(180deg, #1c1e2a 0%, #161821 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+
   --font-display: 'Source Serif 4', Georgia, serif;
-  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-body: 'Inter', 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 20px rgba(108,140,255,0.15);
 }
 
 * {
@@ -43,6 +75,7 @@ body {
   font-family: var(--font-body);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
 }
 
 button {
@@ -52,6 +85,27 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-vivid);
+}
+
+/* Smooth scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-light);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-subtle);
 }
 
 @media (prefers-reduced-motion: reduce) {
