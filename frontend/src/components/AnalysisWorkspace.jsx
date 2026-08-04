@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { analyzeFull, sendChatMessage } from '../api'
+import FormattedMessage from './FormattedMessage'
 
 /**
  * View 3: Two-pane analysis workspace.
@@ -19,7 +20,6 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
   const [threadId] = useState(() => `analysis_${Date.now()}`)
   const messagesEndRef = useRef(null)
 
-  // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -72,7 +72,6 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
     }
   }
 
-  // ─── Confidence bar helper ─────────────────────────────────────────
   const ConfidenceBar = ({ value, label }) => (
     <div className="analysis-confidence-row">
       <span className="analysis-confidence-label">{label}</span>
@@ -93,7 +92,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
         <button className="analysis-back-btn" onClick={onBack} id="analysis-back">
           ← Back to Inspector
         </button>
-        <h2 className="analysis-header-title">📊 Deep Legal Analysis & Case Chat</h2>
+        <h2 className="analysis-header-title">Deep Legal Analysis & Case Chat</h2>
         <div className="analysis-header-badge">InLegalBERT + Graph RAG</div>
       </header>
 
@@ -102,7 +101,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
         {/* ── Left Pane: InLegalBERT Analysis ── */}
         <div className="analysis-left-pane">
           <div className="analysis-pane-header">
-            <h3>🧠 InLegalBERT Analysis</h3>
+            <h3>InLegalBERT Analysis</h3>
           </div>
 
           {analysisLoading && (
@@ -114,7 +113,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
 
           {analysisError && (
             <div className="analysis-error-card">
-              <p>⚠️ {analysisError}</p>
+              <p>{analysisError}</p>
             </div>
           )}
 
@@ -122,7 +121,6 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
             <div className="analysis-cards">
               {/* LSI Card */}
               <div className="analysis-card analysis-card--lsi">
-                <div className="analysis-card-icon">📜</div>
                 <h4>Legal Statute Identification</h4>
                 <p className="analysis-card-desc">Applicable BNS/IPC Sections</p>
                 <div className="analysis-card-body">
@@ -137,7 +135,6 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
 
               {/* RR Card */}
               <div className="analysis-card analysis-card--rr">
-                <div className="analysis-card-icon">🏛️</div>
                 <h4>Rhetorical Roles</h4>
                 <p className="analysis-card-desc">Sentence-level structural analysis</p>
                 <div className="analysis-card-body analysis-rr-list">
@@ -158,14 +155,12 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
 
               {/* CJPE Card */}
               <div className="analysis-card analysis-card--cjpe">
-                <div className="analysis-card-icon">⚖️</div>
                 <h4>Case Judgment Prediction</h4>
                 <p className="analysis-card-desc">Predicted outcome based on facts</p>
                 <div className="analysis-card-body">
                   {analysisData.cjpe_prediction && (
                     <div className="analysis-cjpe-result">
                       <div className={`analysis-cjpe-outcome analysis-cjpe-outcome--${analysisData.cjpe_prediction.outcome.includes('Accepted') ? 'accepted' : 'rejected'}`}>
-                        {analysisData.cjpe_prediction.outcome.includes('Accepted') ? '✅' : '❌'}{' '}
                         {analysisData.cjpe_prediction.outcome}
                       </div>
                       <ConfidenceBar label="Confidence" value={analysisData.cjpe_prediction.confidence} />
@@ -186,30 +181,34 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
         {/* ── Right Pane: Graph RAG Chatbot ── */}
         <div className="analysis-right-pane">
           <div className="analysis-pane-header">
-            <h3>💬 Case Document Chat</h3>
+            <h3>Case Document Chat</h3>
             <span className="analysis-pane-badge">Graph RAG</span>
           </div>
 
           <div className="analysis-chat-messages">
             {messages.length === 0 && (
               <div className="analysis-chat-empty">
-                <p>🔍 Ask questions about the uploaded case file.</p>
+                <p>Ask questions about the uploaded case file.</p>
                 <p className="analysis-chat-hint">This chatbot queries the Neo4j knowledge graph built from your document.</p>
               </div>
             )}
             {messages.map(msg => (
               <div key={msg.id} className={`chat-message chat-message--${msg.role}`}>
                 <div className="chat-message-avatar">
-                  {msg.role === 'user' ? '👤' : msg.role === 'error' ? '⚠️' : '🔍'}
+                  {msg.role === 'user' ? 'U' : msg.role === 'error' ? '!' : 'N'}
                 </div>
                 <div className="chat-message-bubble">
-                  <div className="chat-message-content">{msg.content}</div>
+                  <div className="chat-message-content">
+                    {msg.role === 'assistant'
+                      ? <FormattedMessage text={msg.content} />
+                      : msg.content}
+                  </div>
                 </div>
               </div>
             ))}
             {chatLoading && (
               <div className="chat-message chat-message--assistant">
-                <div className="chat-message-avatar">🔍</div>
+                <div className="chat-message-avatar">N</div>
                 <div className="chat-message-bubble">
                   <div className="chat-typing-indicator">
                     <span /><span /><span />
@@ -237,7 +236,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
               disabled={!chatInput.trim() || chatLoading}
               id="analysis-chat-send"
             >
-              ➤
+              ›
             </button>
           </div>
         </div>

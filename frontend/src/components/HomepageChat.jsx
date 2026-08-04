@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { sendChatMessage } from '../api'
+import FormattedMessage from './FormattedMessage'
 
 /**
- * View 1: Full-screen legal chatbot landing page.
+ * View 1: Full-screen general legal chatbot landing page.
  * Provides general legal Q&A via the LangGraph agent and a prominent
  * navigation button to the PDF Error Inspector.
  */
@@ -59,10 +60,8 @@ export default function HomepageChat({ onNavigateToInspector }) {
 
   return (
     <div className="homepage-chat">
-      {/* Top Navigation Bar */}
       <header className="chat-header">
         <div className="chat-header-brand">
-          <span className="chat-logo-icon">⚖️</span>
           <span className="chat-brand-text">NyayAI</span>
         </div>
         <button
@@ -70,15 +69,13 @@ export default function HomepageChat({ onNavigateToInspector }) {
           onClick={onNavigateToInspector}
           id="nav-to-inspector"
         >
-          📄 Go to PDF Error Inspector
+          Go to PDF Error Inspector
         </button>
       </header>
 
-      {/* Chat Area */}
       <div className="chat-body">
         {messages.length === 0 ? (
           <div className="chat-welcome">
-            <div className="chat-welcome-icon">⚖️</div>
             <h1 className="chat-welcome-title">NyayAI Legal Assistant</h1>
             <p className="chat-welcome-subtitle">
               Your AI-powered Indian legal companion. Ask questions about laws,
@@ -101,16 +98,20 @@ export default function HomepageChat({ onNavigateToInspector }) {
             {messages.map(msg => (
               <div key={msg.id} className={`chat-message chat-message--${msg.role}`}>
                 <div className="chat-message-avatar">
-                  {msg.role === 'user' ? '👤' : msg.role === 'error' ? '⚠️' : '⚖️'}
+                  {msg.role === 'user' ? 'U' : msg.role === 'error' ? '!' : 'N'}
                 </div>
                 <div className="chat-message-bubble">
-                  <div className="chat-message-content">{msg.content}</div>
+                  <div className="chat-message-content">
+                    {msg.role === 'assistant'
+                      ? <FormattedMessage text={msg.content} />
+                      : msg.content}
+                  </div>
                 </div>
               </div>
             ))}
             {isLoading && (
               <div className="chat-message chat-message--assistant">
-                <div className="chat-message-avatar">⚖️</div>
+                <div className="chat-message-avatar">N</div>
                 <div className="chat-message-bubble">
                   <div className="chat-typing-indicator">
                     <span /><span /><span />
@@ -123,7 +124,6 @@ export default function HomepageChat({ onNavigateToInspector }) {
         )}
       </div>
 
-      {/* Input Area */}
       <div className="chat-input-area">
         <div className="chat-input-container">
           <textarea
@@ -143,7 +143,7 @@ export default function HomepageChat({ onNavigateToInspector }) {
             disabled={!input.trim() || isLoading}
             id="chat-send"
           >
-            ➤
+            ›
           </button>
         </div>
         <p className="chat-disclaimer">

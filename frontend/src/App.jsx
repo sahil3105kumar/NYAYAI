@@ -97,7 +97,11 @@ export default function App() {
     if (!jobId) return
     let cancelled = false
 
+    let pollCount = 0
+    const MAX_POLLS = 300 // ~90s at 300ms intervals
+
     const poll = setInterval(async () => {
+      pollCount++
       try {
         const { status: jobStatus } = await pollJobStatus(jobId)
         if (cancelled) return
@@ -130,6 +134,13 @@ export default function App() {
               setUploadError(err.message)
             }
           }
+        } else if (pollCount >= MAX_POLLS) {
+          clearInterval(poll)
+          setStatus(null)
+          setUploadError(
+            'Processing timed out. The error-detection worker may not be running. ' +
+            'Ensure the Celery worker is started with: celery -A workers.celery_app worker'
+          )
         }
       } catch (err) {
         clearInterval(poll)
