@@ -2,11 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { sendChatMessage } from '../api'
 import FormattedMessage from './FormattedMessage'
 
-/**
- * View 1: Full-screen general legal chatbot landing page.
- * Provides general legal Q&A via the LangGraph agent and a prominent
- * navigation button to the PDF Error Inspector.
- */
+
 export default function HomepageChat({ onNavigateToInspector }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')

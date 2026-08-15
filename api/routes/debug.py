@@ -1,12 +1,4 @@
-"""
-Development-only API routes. only mounted when settings.debug is True
-(see api/main.py) - these poke at Celery internals directly, which
-nothing outside local dev should ever need, and there's no auth on this
-API to gate them otherwise.
 
-GET  /debug/queue                    - how many tasks are sitting unpicked
-POST /debug/jobs/{job_id}/force-status - overwrite a job's status by hand
-"""
 
 from pathlib import Path
 

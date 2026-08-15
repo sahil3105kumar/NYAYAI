@@ -163,14 +163,12 @@ export default function App() {
   const goToAnalysis = useCallback(() => {
     setCurrentView('analysis')
     // Fire background ingestion (best-effort, no blocking)
-    if (file) {
-      // Ingest happens server-side from the uploaded file path
-      // The server knows where uploads are stored
-      ingestPDFForGraph(`data/uploads/${file.name}`).catch(err => {
+    if (jobId) {
+      ingestPDFForGraph(jobId).catch(err => {
         console.warn('Background ingestion warning:', err.message)
       })
     }
-  }, [file])
+  }, [jobId])
 
   const goHome = useCallback(() => setCurrentView('home'), [])
 
@@ -222,6 +220,7 @@ export default function App() {
     return (
       <AnalysisWorkspace
         extractedText={extractedText}
+        jobId={jobId}
         onBack={() => setCurrentView('inspect')}
       />
     )

@@ -1,8 +1,4 @@
-"""
-Timing middleware. adds an X-Process-Time header (seconds, as a plain
-float string) to every response - a cheap way to spot a slow endpoint
-without reaching for a real profiler first.
-"""
+
 
 import time
 

@@ -1,76 +1,101 @@
+
+
+import logging
 import os
+
 from dotenv import load_dotenv
 from langchain_mistralai.chat_models import ChatMistralAI
-from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
-from langchain_core.prompts import PromptTemplate
+from langchain_neo4j import Neo4jGraph
 
 load_dotenv()
 
-# Reconnect to Graph using the native wrapper
-graph = Neo4jGraph(
-    url=os.getenv("NEO4J_URI"),
-    username=os.getenv("NEO4J_USERNAME"),
-    password=os.getenv("NEO4J_PASSWORD"),
-    database=os.getenv("NEO4J_DATABASE")
-    
-)
+logger = logging.getLogger(__name__)
 
-cypher_llm = ChatMistralAI(model="mistral-small-latest", temperature=0)
-qa_llm = ChatMistralAI(model="mistral-small-latest", temperature=0.2)
 
-# Custom Cypher Template that strictly enforces our Legal Schema
-CYPHER_GENERATION_TEMPLATE = """
-You are an expert Neo4j Developer. Given a question, convert it into a Cypher query based on the graph schema below.
+_CASE_FILE_QUERY = """
+MATCH (n)
+WHERE n.job_id = $job_id
+OPTIONAL MATCH (n)-[r]->(m)
+WHERE m.job_id = $job_id
+RETURN
+    coalesce(n.name, n.id) AS source,
+    [l IN labels(n) WHERE l <> '__Entity__'] AS source_labels,
+    type(r) AS relationship,
+    coalesce(m.name, m.id) AS target
+LIMIT 300
+"""
 
-SCHEMA RULES:
-1. Node Labels MUST only be chosen from:
-   - Victim (Complainants/Victims like 'Krishna Punasya')
-   - Accused (Suspects/Accused persons)
-   - Witness (Witnesses in the case)
-   - Evidence (Stolen property, physical evidence like 'MacBook', 'CCTV Footage')
-   - Location (Places like 'IIITDMJ Campus', 'Khamaria Police Station')
-   - Statute (Laws like 'IPC 379', 'BNS 303(2)')
-   - Date (Dates mentioned)
 
-2. Node Properties:
-   - ALL nodes primarily use 'id' or 'name' for their titles, and 'description' for extra details (e.g., serial numbers, colors, or details are stored inside 'id' or 'description').
-   - DO NOT query properties like '.color', '.serial_number', or '.address'. Use 'id', 'name', or 'description' instead!
+def _get_graph() -> Neo4jGraph:
+    return Neo4jGraph(
+        url=os.getenv("NEO4J_URI"),
+        username=os.getenv("NEO4J_USERNAME"),
+        password=os.getenv("NEO4J_PASSWORD"),
+        database=os.getenv("NEO4J_DATABASE"),
+    )
 
-3. Relationships MUST only be chosen from:
-   - COMMITTED_AT, WITNESSED_BY, CORROBORATES, CONTRADICTS, RELIED_UPON, RECOVERED_FROM, CHARGED_UNDER
 
-EXAMPLES:
-- To find complainant/victim: MATCH (v:Victim) RETURN v.id AS complainant
-- To find stolen item: MATCH (e:Evidence) RETURN e.id AS stolen_item, e.description AS details
-- To find location: MATCH (l:Location) RETURN l.id AS location
+def _format_facts(records: list[dict]) -> str:
 
-Schema:
-{schema}
+    lines: list[str] = []
+    seen: set[str] = set()
+
+    for row in records:
+        source = row.get("source")
+        if not source:
+            continue
+
+        rel = row.get("relationship")
+        target = row.get("target")
+
+        if rel and target:
+            line = f"({source}) -[{rel}]-> ({target})"
+        else:
+            labels = row.get("source_labels") or []
+            entity_type = labels[0] if labels else None
+            line = f"{source}" + (f" [{entity_type}]" if entity_type else "")
+
+        if line not in seen:
+            seen.add(line)
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+def query_case_file(question: str, job_id: str) -> str:
+
+    graph = _get_graph()
+
+    try:
+        records = graph.query(_CASE_FILE_QUERY, params={"job_id": job_id})
+    except Exception:
+        logger.exception("Graph RAG query failed (job_id=%s)", job_id)
+        return (
+            "I couldn't reach the knowledge graph to answer that. Make sure "
+            "Neo4j is reachable and try again."
+        )
+
+    if not records:
+        return (
+            "I don't see this document in the knowledge graph yet. It needs "
+            "to be ingested first (POST /api/v1/chat/ingest) before I can "
+            "answer questions about it."
+        )
+
+    facts = _format_facts(records)
+
+    llm = ChatMistralAI(model="mistral-small-latest", temperature=0)
+    prompt = f"""You are a legal assistant answering a question about a single uploaded case file.
+Use ONLY the facts extracted from this document's knowledge graph below - do not use
+outside knowledge or facts about any other case. If the facts don't contain the
+answer, say so plainly instead of guessing.
+
+Knowledge graph facts:
+{facts}
 
 Question: {question}
-Cypher Query:"""
 
-cypher_prompt = PromptTemplate(
-    template=CYPHER_GENERATION_TEMPLATE,
-    input_variables=["schema", "question"]
-)
+Answer:"""
 
-# Build the QA Chain
-graph_qa_chain = GraphCypherQAChain.from_llm(
-    cypher_llm=cypher_llm,
-    qa_llm=qa_llm,
-    graph=graph,
-    verbose=True,
-    cypher_prompt=cypher_prompt,
-    allow_dangerous_requests=True
-)
-
-def query_case_file(question: str) -> str:
-    response = graph_qa_chain.invoke({"query": question})
-    return response["result"]
-
-if __name__ == "__main__":
-    # Test the RAG directly
-    # ans = query_case_file("Who was the accused charged under IPC 302, and what did the main witness say?")
-    # print(ans)
-    print("Graph RAG tool initialized. Ready to query.")
+    response = llm.invoke(prompt)
+    return response.content

@@ -2,12 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { analyzeFull, sendChatMessage } from '../api'
 import FormattedMessage from './FormattedMessage'
 
-/**
- * View 3: Two-pane analysis workspace.
- *   Left  (50%) — InLegalBERT analysis cards (LSI, RR, CJPE)
- *   Right (50%) — Context-aware Graph RAG chatbot scoped to uploaded doc
- */
-export default function AnalysisWorkspace({ extractedText, onBack }) {
+
+export default function AnalysisWorkspace({ extractedText, jobId, onBack }) {
   // ─── Analysis State ────────────────────────────────────────────────
   const [analysisData, setAnalysisData] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -24,7 +20,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Run full analysis on mount if we have text
+  
   useEffect(() => {
     if (!extractedText) return
     let cancelled = false
@@ -45,7 +41,7 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
     return () => { cancelled = true }
   }, [extractedText])
 
-  // ─── Chat handlers ─────────────────────────────────────────────────
+
   const handleSendChat = useCallback(async () => {
     const text = chatInput.trim()
     if (!text || chatLoading) return
@@ -56,14 +52,14 @@ export default function AnalysisWorkspace({ extractedText, onBack }) {
     setChatLoading(true)
 
     try {
-      const { reply } = await sendChatMessage(text, threadId)
+      const { reply } = await sendChatMessage(text, threadId, jobId)
       setMessages(prev => [...prev, { role: 'assistant', content: reply, id: Date.now() + 1 }])
     } catch (err) {
       setMessages(prev => [...prev, { role: 'error', content: err.message, id: Date.now() + 1 }])
     } finally {
       setChatLoading(false)
     }
-  }, [chatInput, chatLoading, threadId])
+  }, [chatInput, chatLoading, threadId, jobId])
 
   const handleChatKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

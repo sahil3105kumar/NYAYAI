@@ -6,6 +6,11 @@ from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassific
 import nltk
 from nltk.tokenize import sent_tokenize
 from pathlib import Path
+import threading
+import time
+import logging
+import gc
+logger = logging.getLogger(__name__)
 
 # Absolute base for model weights — avoids CWD-dependent resolution
 _ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -210,3 +215,53 @@ class NyayAI_Models:
             "outcome": outcome,
             "confidence": round(float(conf.item()), 4)
         }
+    
+
+
+    _cache: dict = {}
+    _locks = {"lsi": threading.Lock(), "rr": threading.Lock(), "cjpe": threading.Lock()}
+    _last_used: dict = {}
+
+    _LOADERS = {
+        "lsi": "load_lsi_model",
+        "rr": "load_rr_model",
+        "cjpe": "load_cjpe_model",
+    }
+
+    @classmethod
+    def get_model(cls, name: str) -> dict:
+        """
+        Thread-safe lazy loader. First caller for a given model name pays
+        the load cost and populates the cache; every call after that (from
+        any thread) just returns the cached bundle. Deliberately per-model
+        locks, not one global lock — a request for "rr" shouldn't block
+        behind an in-flight "lsi" load.
+        """
+        if name not in cls._LOADERS:
+            raise ValueError(f"Unknown model '{name}'")
+
+        cls._last_used[name] = time.monotonic()
+
+        bundle = cls._cache.get(name)
+        if bundle is not None:
+            return bundle
+
+        with cls._locks[name]:
+            # re-check: another thread may have finished loading while we
+            # were waiting on the lock
+            bundle = cls._cache.get(name)
+            if bundle is None:
+                logger.info(f"Loading {name.upper()} model (first use this process)...")
+                loader = getattr(cls, cls._LOADERS[name])
+                bundle = loader()
+                cls._cache[name] = bundle
+                logger.info(f"{name.upper()} model ready")
+            return bundle
+
+    @classmethod
+    def unload_all(cls):
+        
+        cls._cache.clear()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

@@ -160,3 +160,5 @@ output/
 docker/qdrant/
 docker/redis/
 /data
+files_to_zip.txt
+*.zip

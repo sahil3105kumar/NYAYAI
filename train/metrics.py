@@ -52,17 +52,23 @@ def align_predictions(predictions: np.ndarray, label_ids: np.ndarray) -> tuple[l
 
 
 def compute_metrics(eval_pred) -> dict:
-    from seqeval.metrics import precision_score, recall_score, f1_score
+    from seqeval.metrics import precision_score, recall_score, f1_score, classification_report
 
     predictions, label_ids = eval_pred
     true_labels, pred_labels = align_predictions(predictions, label_ids)
+
+    # ADDED: Generate classification report for macro metrics
+    report = classification_report(true_labels, pred_labels, output_dict=True, zero_division=0)
+    macro = report["macro avg"]
 
     return {
         "precision": precision_score(true_labels, pred_labels),
         "recall": recall_score(true_labels, pred_labels),
         "f1": f1_score(true_labels, pred_labels),
+        "macro_f1": macro["f1-score"],
+        "macro_precision": macro["precision"],
+        "macro_recall": macro["recall"],
     }
-
 
 def full_report(true_labels: list[list[str]], pred_labels: list[list[str]]) -> str:
     """per-label precision/recall/F1 - used by evaluate.py, not during training."""

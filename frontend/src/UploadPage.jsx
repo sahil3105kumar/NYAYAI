@@ -1,11 +1,6 @@
 import { useRef, useState } from 'react'
 
-// `file.type` alone isn't reliable: it's just OS/browser-reported
-// metadata, not a property of the actual bytes. some browsers leave it
-// blank for certain drag-and-drop sources, and it's trivially wrong if a
-// file's been renamed. this checks the extension as a fallback trigger,
-// then confirms with the real PDF magic number ("%PDF-") from the file's
-// first bytes - that's what actually determines whether this is a PDF.
+
 async function isPdfFile(file) {
   if (!file) return false
 

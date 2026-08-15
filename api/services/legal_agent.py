@@ -1,17 +1,12 @@
-"""
-Master legal agent — routes user queries to the right tool:
-  1. Graph RAG (query uploaded case files in Neo4j)
-  2. InLegalBERT analysis (statute identification, rhetorical roles, judgment prediction)
-  3. Legal document drafting
 
-Uses LangGraph's create_react_agent for tool-calling with memory.
-"""
 
 import os
 import logging
+from typing import Optional
 from dotenv import load_dotenv
 from langchain_mistralai.chat_models import ChatMistralAI
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -86,9 +81,14 @@ agent_executor = create_react_agent(
     checkpointer=memory
 )
 
-def chat_with_nyayai(user_input: str, thread_id: str = "default_session") -> str:
-    """Invokes the master agent and returns the response string."""
-    config = {"configurable": {"thread_id": thread_id}}
+def chat_with_nyayai(user_input: str, thread_id: str = "default_session", job_id: Optional[str] = None) -> str:
+    """Invokes the master agent and returns the response string.
+
+    job_id (if given) is passed through LangGraph's `configurable` config,
+    not as a message the LLM reads - see query_uploaded_case_file's
+    RunnableConfig injection above for why.
+    """
+    config = {"configurable": {"thread_id": thread_id, "job_id": job_id}}
     inputs = {"messages": [("user", user_input)]}
     
     response = agent_executor.invoke(inputs, config)

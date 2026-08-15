@@ -1,12 +1,8 @@
-/**
- * Lightweight markdown-to-JSX renderer for chat messages.
- * Handles: headings, bold, italic, horizontal rules, lists, line breaks.
- * No external dependency — keeps the bundle small.
- */
+
 export default function FormattedMessage({ text }) {
   if (!text) return null
 
-  // Try to detect if the response is raw JSON and pretty-format it
+
   if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
     try {
       const parsed = JSON.parse(text)

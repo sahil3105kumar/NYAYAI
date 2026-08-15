@@ -58,11 +58,11 @@ export async function fetchResult(jobId) {
 
 // ─── Chat Agent ──────────────────────────────────────────────────────
 
-export async function sendChatMessage(message, threadId = 'default_session') {
+export async function sendChatMessage(message, threadId = 'default_session', jobId = null) {
   const res = await fetch(`${API_BASE_URL}/api/v1/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, thread_id: threadId }),
+    body: JSON.stringify({ message, thread_id: threadId, job_id: jobId }),
   })
   const data = await res.json().catch(() => ({}))
 
@@ -76,11 +76,11 @@ export async function sendChatMessage(message, threadId = 'default_session') {
 
 // ─── PDF → Neo4j Ingestion ──────────────────────────────────────────
 
-export async function ingestPDFForGraph(pdfPath) {
+export async function ingestPDFForGraph(jobId) {
   const res = await fetch(`${API_BASE_URL}/api/v1/chat/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pdf_path: pdfPath }),
+    body: JSON.stringify({ job_id: jobId }),
   })
   const data = await res.json().catch(() => ({}))
 

@@ -2979,6 +2979,7 @@ dependencies = [
     { name = "evaluate" },
     { name = "fastapi" },
     { name = "greenlet" },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-core" },
     { name = "langchain-experimental" },
@@ -2994,6 +2995,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pymupdf4llm" },
     { name = "pypdf" },
+    { name = "pyspellchecker" },
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
@@ -3019,6 +3021,7 @@ requires-dist = [
     { name = "evaluate", specifier = "==0.4.6" },
     { name = "fastapi", specifier = "==0.115.0" },
     { name = "greenlet", specifier = ">=3.5.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain", specifier = ">=0.3.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-experimental", specifier = ">=0.3.0" },
@@ -3034,6 +3037,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "==2.5.2" },
     { name = "pymupdf4llm", specifier = ">=0.0.10" },
     { name = "pypdf" },
+    { name = "pyspellchecker", specifier = ">=0.8.1" },
     { name = "pytest" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-multipart", specifier = "==0.0.12" },
@@ -4201,6 +4205,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b6/6d/f94028646d7bbe6d9d873c47ee7c246f2d29129d253f0d96cb6fcab70733/pyreadline3-3.5.6.tar.gz", hash = "sha256:61e53218b99656091ddb077df9e71f25850e72e030b6183b39c9b7e6e4f4a9bf", size = 100368, upload-time = "2026-05-14T17:55:04.471Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/5e/35c856e186b74678c24927847ad9895a51f1bc02a0c6126477a6c6040064/pyreadline3-3.5.6-py3-none-any.whl", hash = "sha256:8449b734232e42a5dcd74048e39b60db2839a4c38cf3ae2bf7707d58b5389c0d", size = 85243, upload-time = "2026-05-14T17:55:03.262Z" },
+]
+
+[[package]]
+name = "pyspellchecker"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/70/58443d052adb868fee9fafb26553d482f2cc4d7c5ed5bb46846a7ce62a01/pyspellchecker-0.9.0.tar.gz", hash = "sha256:eb1a594161c84a4e67df7db1c269a3392a645bd50e4c82e1298892db0cdb0965", size = 7239784, upload-time = "2026-03-07T17:14:53.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/70/df4b8816f5e1aa8b46fbc2b1d104d8f5bc13ec92fb69310b35bc56ea7260/pyspellchecker-0.9.0-py3-none-any.whl", hash = "sha256:97eaed776e0854f69aafb723f6962b403099e50c9a1d9c05525c819f4b0f5d54", size = 7237077, upload-time = "2026-03-07T17:14:51.444Z" },
 ]
 
 [[package]]

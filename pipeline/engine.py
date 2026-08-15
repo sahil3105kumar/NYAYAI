@@ -1,10 +1,3 @@
-"""
-orchestrates the full error-detection pipeline for one document:
-ML model + rule-based checkers -> merge -> deduplicate -> reading-order sort.
-
-this is the only file that knows about model/ and rules/ together - those
-two packages never import from each other, and neither imports pipeline/.
-"""
 
 from ocr.tokens import LineSpan
 from model.schemas import ErrorSpan
