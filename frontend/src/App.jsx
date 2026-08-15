@@ -5,7 +5,9 @@ import PdfCanvas from './PdfCanvas'
 import HighlightOverlay from './HighlightOverlay'
 import MarginRail from './MarginRail'
 import ErrorList from './ErrorList'
-import { uploadPdf, pollJobStatus, fetchResult } from './api'
+import HomepageChat from './components/HomepageChat'
+import AnalysisWorkspace from './components/AnalysisWorkspace'
+import { uploadPdf, pollJobStatus, fetchResult, ingestPDFForGraph } from './api'
 
 const POLL_INTERVAL_MS = 300
 const ZOOM_STEP = 0.15
@@ -13,6 +15,11 @@ const ZOOM_MIN = 0.4
 const ZOOM_MAX = 3
 
 export default function App() {
+  // ─── View Navigation ────────────────────────────────────────────────
+  // 'home' → 'inspect' → 'analysis'
+  const [currentView, setCurrentView] = useState('home')
+
+  // ─── Inspector State (preserved from original) ──────────────────────
   const [file, setFile] = useState(null)
   const [jobId, setJobId] = useState(null)
   const [status, setStatus] = useState(null)
@@ -20,13 +27,14 @@ export default function App() {
   const [uploadError, setUploadError] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [activeErrorIndex, setActiveErrorIndex] = useState(null)
-  const [pageInfo, setPageInfo] = useState(null) // { widthPts, heightPts, displayScale, numPages }
-  const [zoom, setZoom] = useState(1) // user multiplier on top of fit-to-width; 1 = fit exactly
+  const [pageInfo, setPageInfo] = useState(null) // { widthPts, heightPts, displayScale }
+  const [zoom, setZoom] = useState(1)
 
-  // PdfCanvas sizes itself to fill this rather than a fixed 1-point-per-
-  // CSS-pixel size (which renders as a small rectangle in a sea of empty
-  // space on any normal monitor - see PdfCanvas.jsx's docstring). tracked
-  // via ResizeObserver rather than window resize alone, since the sidebar
+  // ─── Analysis State ─────────────────────────────────────────────────
+  const [extractedText, setExtractedText] = useState('')
+
+  // ─── Canvas container width tracking ────────────────────────────────
+  // ResizeObserver-based so the PDF canvas reacts to sidebar collapse
   // or margin rail resizing (not just the window) also changes how much
   // width is actually available.
   const canvasAreaRef = useRef(null)
@@ -58,6 +66,7 @@ export default function App() {
   const zoomOut = useCallback(() => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2))), [])
   const resetZoom = useCallback(() => setZoom(1), [])
 
+  // ─── Upload Handler (unchanged logic) ───────────────────────────────
   const handleFileSelected = useCallback(async (selectedFile) => {
     setFile(selectedFile)
     setJobId(null)
@@ -88,7 +97,11 @@ export default function App() {
     if (!jobId) return
     let cancelled = false
 
+    let pollCount = 0
+    const MAX_POLLS = 300 // ~90s at 300ms intervals
+
     const poll = setInterval(async () => {
+      pollCount++
       try {
         const { status: jobStatus } = await pollJobStatus(jobId)
         if (cancelled) return
@@ -97,7 +110,18 @@ export default function App() {
         if (jobStatus === 'SUCCESS') {
           clearInterval(poll)
           const result = await fetchResult(jobId)
-          if (!cancelled) setReport(result)
+          if (!cancelled) {
+            setReport(result)
+
+            // Extract plain text from the error report for analysis
+            // The report contains error spans with text — join them for InLegalBERT
+            if (result?.errors) {
+              const textParts = result.errors.map(e => e.original_text || e.text || '').filter(Boolean)
+              if (textParts.length > 0) {
+                setExtractedText(textParts.join(' '))
+              }
+            }
+          }
         } else if (jobStatus === 'FAILURE') {
           clearInterval(poll)
           // fetchResult throws with the real error message on a failed job -
@@ -110,6 +134,13 @@ export default function App() {
               setUploadError(err.message)
             }
           }
+        } else if (pollCount >= MAX_POLLS) {
+          clearInterval(poll)
+          setStatus(null)
+          setUploadError(
+            'Processing timed out. The error-detection worker may not be running. ' +
+            'Ensure the Celery worker is started with: celery -A workers.celery_app worker'
+          )
         }
       } catch (err) {
         clearInterval(poll)
@@ -125,6 +156,21 @@ export default function App() {
       clearInterval(poll)
     }
   }, [jobId])
+
+  // ─── Navigation handlers ────────────────────────────────────────────
+  const goToInspector = useCallback(() => setCurrentView('inspect'), [])
+
+  const goToAnalysis = useCallback(() => {
+    setCurrentView('analysis')
+    // Fire background ingestion (best-effort, no blocking)
+    if (jobId) {
+      ingestPDFForGraph(jobId).catch(err => {
+        console.warn('Background ingestion warning:', err.message)
+      })
+    }
+  }, [jobId])
+
+  const goHome = useCallback(() => setCurrentView('home'), [])
 
   // report.total_pages comes straight from renderer/report.py and is known
   // the instant the report loads - pageInfo.numPages only exists after
@@ -164,18 +210,47 @@ export default function App() {
     return pageErrors.indexOf(active)
   }, [activeErrorIndex, report, currentPage, pageErrors])
 
+  // ─── View 1: Homepage Chatbot ───────────────────────────────────────
+  if (currentView === 'home') {
+    return <HomepageChat onNavigateToInspector={goToInspector} />
+  }
+
+  // ─── View 3: Analysis Workspace ─────────────────────────────────────
+  if (currentView === 'analysis') {
+    return (
+      <AnalysisWorkspace
+        extractedText={extractedText}
+        jobId={jobId}
+        onBack={() => setCurrentView('inspect')}
+      />
+    )
+  }
+
+  // ─── View 2: PDF Inspector (original, with analysis nav) ────────────
   if (!report) {
-    return <UploadPage onFileSelected={handleFileSelected} status={status} error={uploadError} />
+    return (
+      <UploadPage
+        onFileSelected={handleFileSelected}
+        status={status}
+        error={uploadError}
+        onGoHome={goHome}
+      />
+    )
   }
 
   return (
     <div className="viewer">
       <header className="viewer-header">
-        <div className="viewer-header-title">
-          <span className="viewer-eyebrow">NyayAI</span>
-          <h1>{report.source_filename}</h1>
+        <div className="viewer-header-left">
+          <button className="viewer-home-btn" onClick={goHome} id="viewer-home">
+            NyayAI Home
+          </button>
+          <div className="viewer-header-title">
+            <span className="viewer-eyebrow">NyayAI</span>
+            <h1>{report.source_filename}</h1>
+          </div>
         </div>
-        <div className="viewer-header-controls">
+        <div className="viewer-header-right">
           <div className="viewer-page-nav">
             <button
               type="button"
@@ -205,6 +280,14 @@ export default function App() {
               +
             </button>
           </div>
+
+          <button
+            className="viewer-analysis-btn"
+            onClick={goToAnalysis}
+            id="viewer-analysis"
+          >
+            View Deep Legal Analysis & Chat
+          </button>
         </div>
       </header>
 

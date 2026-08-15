@@ -1,7 +1,3 @@
-"""
-LineSpan represents a single line of text extracted from a PDF page.
-Includes metadata for paragraph detection, reading order, and confidence.
-"""
 
 import re
 from dataclasses import dataclass
@@ -10,7 +6,7 @@ from typing import Optional
 
 @dataclass(slots=True)
 class LineSpan:
-    """A single line of text with its bounding box and metadata."""
+    
     
     # Core fields
     text: str                                      # full line text, words joined with single space
@@ -116,13 +112,7 @@ class LineSpan:
 
 
 def sort_spans_by_reading_order(spans: list[LineSpan]) -> list[LineSpan]:
-    """
-    Sort spans by page, then by vertical position (top-to-bottom),
-    with horizontal tie-breaking for multi-column layouts.
     
-    This is a simple implementation. For complex multi-column layouts,
-    a full layout analysis is needed.
-    """
     def sort_key(s: LineSpan) -> tuple[int, float, float]:
         # Primary: page number
         # Secondary: y0 (top position)
@@ -130,3 +120,22 @@ def sort_spans_by_reading_order(spans: list[LineSpan]) -> list[LineSpan]:
         return (s.page_no, s.y0, s.x0)
     
     return sorted(spans, key=sort_key)
+
+
+def spans_to_markdown(spans: list[LineSpan]) -> str:
+    
+    lines: list[str] = []
+
+    for span in spans:
+        text = span.text.strip()
+        if not text:
+            continue
+
+        if span.is_heading:
+            lines.append(f"## {text}")
+        else:
+            if span.is_paragraph_start and lines:
+                lines.append("")  # blank line = new paragraph in Markdown
+            lines.append(text)
+
+    return "\n".join(lines)

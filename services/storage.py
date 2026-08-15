@@ -39,6 +39,17 @@ def report_html_path(job_id: str) -> Path:
     return Path(settings.outputs_dir) / f"{job_id}_report.html"
 
 
+def extracted_text_path(job_id: str) -> Path:
+    """
+    Plain-Markdown text extracted by ocr.pipeline.extract() during the main
+    analysis job (see services.analysis.run_analysis) - no bounding boxes,
+    just the document's text in reading order. Written once per job so the
+    Neo4j knowledge-graph ingestion endpoint (api/routes/chat.py) can reuse
+    it instead of re-parsing the source PDF a second time.
+    """
+    return Path(settings.outputs_dir) / f"{job_id}_extracted.md"
+
+
 def save_upload(job_id: str, file_bytes: bytes, original_filename: str | None = None) -> Path:
     path = upload_path(job_id)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ before fine-tuned weights exist in model/checkpoint/, returns all O labels
 (no errors detected) — honest behavior, not fake predictions. nothing else
 in the pipeline needs to change when real weights are dropped in.
 """
-
+import gc
 import logging
 import os
 import torch
@@ -43,6 +43,34 @@ _CACHED_MODEL = None
 _CACHED_TOKENIZER = None
 _CACHED_DEVICE = None
 
+
+def unload_model() -> None:
+    """
+    Explicitly release the module-level cached model/tokenizer. Mirrors
+    ocr.surya_extractor.unload_surya_models() - a controlled, synchronous
+    teardown (not implicit refcounting/GC timing) so the next
+    _load_model_and_tokenizer() call reloads cleanly.
+
+    Call this before OCR starts on the next document (see
+    services/analysis.py) so Surya gets full VRAM headroom instead of
+    contending with an error-detection model left resident from the
+    previous document - this and unload_surya_models() are a matched
+    pair: whichever stage isn't running right now should have its model
+    unloaded, not just "whatever ran most recently forever".
+    """
+    global _CACHED_MODEL, _CACHED_TOKENIZER, _CACHED_DEVICE
+
+    if _CACHED_MODEL is None:
+        return
+
+    logger.info("unloading error-detection model")
+    _CACHED_MODEL = None
+    _CACHED_TOKENIZER = None
+    _CACHED_DEVICE = None
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 def _load_model_and_tokenizer():
     global _CACHED_MODEL, _CACHED_TOKENIZER, _CACHED_DEVICE

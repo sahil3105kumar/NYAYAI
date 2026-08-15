@@ -14,7 +14,8 @@ hyperparameters below are reasonable BERT-fine-tuning defaults, not
 empirically tuned for this specific task - this hasn't been run yet.
 adjust batch size / gradient accumulation first if it doesn't fit in 6GB.
 """
-
+import torch
+from transformers import Trainer
 import hashlib
 import json
 import logging
@@ -30,6 +31,7 @@ from transformers import (
     AutoModelForTokenClassification,
     Trainer,
     TrainingArguments,
+    EarlyStoppingCallback,
 )
 
 from model.schemas import LABELS, LABEL2ID, ID2LABEL
@@ -53,10 +55,30 @@ VAL_JSONL = settings.training_dir / "val.jsonl"
 # model/predict.py's INFERENCE_BATCH_SIZE and surya's chunked page batching
 PER_DEVICE_BATCH_SIZE = 8
 GRADIENT_ACCUMULATION_STEPS = 4  # effective batch size = 8 * 4 = 32
-NUM_EPOCHS = 5
 LEARNING_RATE = 2e-5
 WARMUP_RATIO = 0.1
 WEIGHT_DECAY = 0.01
+NUM_EPOCHS = 10                       # was 5
+EARLY_STOPPING_PATIENCE = 3           # new
+
+CLASS_WEIGHTS = {                     # from training_config.json — recompute if you regenerate data
+    "O": 0.0969, "B-SPELL": 0.4195, "I-SPELL": 0.3053,
+    "B-GRAM": 0.5402, "I-GRAM": 2.1885, "B-CITE": 2.0735, "I-CITE": 1.3759,
+}
+
+
+class WeightedTrainer(Trainer):
+    def __init__(self, *args, class_weights=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        loss_fct = torch.nn.CrossEntropyLoss(weight=self.class_weights, ignore_index=-100)
+        loss = loss_fct(logits.view(-1, logits.shape[-1]), labels.view(-1))
+        return (loss, outputs) if return_outputs else loss
 
 
 def _git_commit() -> Optional[str]:
@@ -169,6 +191,7 @@ def main():
         label2id=LABEL2ID,
         ignore_mismatched_sizes=True,  # base model has no classification head yet - expected
     )
+    weight_tensor = torch.tensor([CLASS_WEIGHTS[l] for l in LABELS], dtype=torch.float32)
 
     training_args = TrainingArguments(
         output_dir=str(OUTPUT_DIR),
@@ -179,23 +202,27 @@ def main():
         learning_rate=LEARNING_RATE,
         warmup_ratio=WARMUP_RATIO,
         weight_decay=WEIGHT_DECAY,
-        fp16=True,  # halves memory vs full precision - matters at 6GB VRAM
+        fp16=True, 
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
-        metric_for_best_model="f1",
+        metric_for_best_model="macro_f1", # CHANGED from "f1"
         greater_is_better=True,
         logging_steps=50,
         report_to="none",
     )
 
-    trainer = Trainer(
+    # CHANGED from Trainer to WeightedTrainer
+    trainer = WeightedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=build_collator(tokenizer),
         compute_metrics=compute_metrics,
+        # ADDED parameters below:
+        class_weights=weight_tensor.to(model.device if hasattr(model, 'device') else 'cuda'),
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=EARLY_STOPPING_PATIENCE)],
     )
 
     trainer.train()

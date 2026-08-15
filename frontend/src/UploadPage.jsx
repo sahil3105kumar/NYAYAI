@@ -1,11 +1,6 @@
 import { useRef, useState } from 'react'
 
-// `file.type` alone isn't reliable: it's just OS/browser-reported
-// metadata, not a property of the actual bytes. some browsers leave it
-// blank for certain drag-and-drop sources, and it's trivially wrong if a
-// file's been renamed. this checks the extension as a fallback trigger,
-// then confirms with the real PDF magic number ("%PDF-") from the file's
-// first bytes - that's what actually determines whether this is a PDF.
+
 async function isPdfFile(file) {
   if (!file) return false
 
@@ -21,7 +16,7 @@ async function isPdfFile(file) {
   }
 }
 
-export default function UploadPage({ onFileSelected, status, error }) {
+export default function UploadPage({ onFileSelected, status, error, onGoHome }) {
   const inputRef = useRef(null)
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -36,6 +31,12 @@ export default function UploadPage({ onFileSelected, status, error }) {
 
   return (
     <div className="upload-page">
+      {onGoHome && (
+        <button className="upload-home-btn" onClick={onGoHome} id="upload-home">
+          Back to NyayAI Home
+        </button>
+      )}
+
       <div className="upload-page-intro">
         <span className="upload-eyebrow">NyayAI</span>
         <h1>Check a document before it's filed.</h1>

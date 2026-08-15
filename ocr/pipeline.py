@@ -1,16 +1,27 @@
-"""
-single entrypoint for the entire OCR pipeline.
-calls router which extracts native spans + identifies scanned pages
-in one pass, then only calls surya on pages that actually need it.
-"""
 
 import re
+import pypdfium2 as pdfium
 from pathlib import Path
 from typing import List, Optional
-from config.constants import MIN_CHARS_PER_PAGE,MIN_LINES_PER_PAGE, MAX_SCANNED_INDICATORS
+from config.constants import (
+    MIN_CHARS_PER_PAGE,
+    MIN_LINES_PER_PAGE,
+    MAX_SCANNED_INDICATORS,
+    MAX_PAGES,
+)
 
 from ocr.tokens import LineSpan, sort_spans_by_reading_order
 from ocr.router import route
+
+
+class PdfTooLargeError(ValueError):
+    
+    def __init__(self, page_count: int, max_pages: int):
+        self.page_count = page_count
+        self.max_pages = max_pages
+        super().__init__(
+            f"PDF has {page_count} pages, which exceeds the {max_pages}-page limit."
+        )
 
 
 def extract(
@@ -21,20 +32,17 @@ def extract(
     filter_noise: bool = True,
     detect_headings: bool = True,
 ) -> list[LineSpan]:
-    """
-    Extract all text from a PDF as LineSpans.
     
-    Args:
-        pdf_path: Path to the PDF file
-        min_chars_per_page: Minimum characters to consider a page native
-        min_lines_per_page: Minimum lines to consider a page native
-        max_scanned_indicators: Maximum scanned indicators to consider a page native
-        filter_noise: Whether to filter out noise lines
-        detect_headings: Whether to detect heading lines
-        
-    Returns:
-        List of LineSpans in reading order
-    """
+    
+    doc = pdfium.PdfDocument(pdf_path)
+    try:
+        total_page_count = len(doc)
+    finally:
+        doc.close()
+
+    if total_page_count > MAX_PAGES:
+        raise PdfTooLargeError(total_page_count, MAX_PAGES)
+
     native_spans, scanned_pages = route(
         pdf_path,
         min_chars_per_page=min_chars_per_page,
@@ -45,22 +53,20 @@ def extract(
     spans = list(native_spans)
     
     if scanned_pages:
-        # Lazy import so Surya models only load when actually needed
+        
         from ocr.surya_extractor import SuryaExtractor
-        # `with` guarantees clear_cache() runs even if extract() raises -
-        # SuryaExtractor defines __enter__/__exit__ for exactly this, it
-        # just wasn't being used here before.
-        with SuryaExtractor() as surya:
+        
+        with SuryaExtractor(page_count=total_page_count) as surya:
             spans.extend(surya.extract(pdf_path, scanned_pages))
     
-    # Filter noise
+    
     if filter_noise:
         spans = [s for s in spans if not s.is_noise()]
     
-    # Sort by reading order
+    
     spans = sort_spans_by_reading_order(spans)
     
-    # Post-process: detect paragraph boundaries and headings
+    
     spans = _detect_paragraphs(spans, detect_headings)
     
     return spans

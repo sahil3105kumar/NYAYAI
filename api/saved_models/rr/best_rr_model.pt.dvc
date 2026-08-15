@@ -1,0 +1,5 @@
+outs:
+- md5: c46e1ff2558153a26ae36cda0024d336
+  size: 438050657
+  hash: md5
+  path: best_rr_model.pt

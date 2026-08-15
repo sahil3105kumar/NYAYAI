@@ -1,30 +1,16 @@
-"""Celery application setup."""
-"""
-Celery app - deliberately no Redis.
-
-broker: the filesystem transport. Celery/Kombu ship this built-in - a task
-being enqueued is just a file written into celery_broker_data_folder/out,
-and the worker process picks it up from there. no separate service to run.
-
-result backend: SQLite via SQLAlchemy (the "db+sqlite:///..." URL format).
-also just a local file.
-
-both are one-line swaps to redis:// or amqp:// later if this ever needs to
-scale past one machine - nothing in tasks.py or api/ depends on which
-broker is configured here.
-"""
 
 from pathlib import Path
+import os
+
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 from celery import Celery
 
 from config.settings import settings
 from workers.queues import TASK_ROUTES
 
-# neither the filesystem broker's directories nor the sqlite backend's
-# parent directory get created automatically - kombu and sqlite3 both
-# error out if they're missing, so this has to happen before anything
-# tries to enqueue or connect
+
 _broker_root = Path(settings.celery_broker_data_folder)
 (_broker_root / "out").mkdir(parents=True, exist_ok=True)
 (_broker_root / "processed").mkdir(parents=True, exist_ok=True)
@@ -49,5 +35,11 @@ app.conf.task_routes = TASK_ROUTES
 # in the sqlite backend indefinitely for now. revisit if this grows.
 app.conf.result_expires = None
 
-# app.autodiscover_tasks(["workers"])
+
+app.conf.task_soft_time_limit = 300  # seconds
+app.conf.task_time_limit = 360  # seconds
+
+app.conf.broker_connection_retry_on_startup = True
+
+
 app.conf.imports = ("workers.tasks",)

@@ -1,0 +1,5 @@
+outs:
+- md5: c0cf834117e4127542ebd2cb614ec619
+  size: 438017215
+  hash: md5
+  path: best_cjpe_model.pt

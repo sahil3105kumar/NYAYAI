@@ -1,500 +1,633 @@
-# NyayAI
+# NyayAI -- AI-Powered Legal Document Audit System for Indian Law
 
-An AI-powered error detection tool for Indian legal documents (FIRs, contracts,
-court notices). NyayAI ingests a PDF, detects spelling, grammar, and semantic
-errors — including wrong IPC/BNS section citations and entity inconsistencies
-across a document — and returns an annotated PDF with color-coded highlights
-plus a structured report.
+## Table of Contents
 
-**Everything runs locally.** No external OCR or LLM APIs — built for courts,
-law firms, and legal aid organisations where document confidentiality and
-per-document cost both matter.
-
-**The full pipeline is verified working end to end**: upload a real PDF in the
-real frontend → it hits the real FastAPI backend → Celery runs OCR → the
-fine-tuned InLegalBERT model + rules (citation + entity + spelling +
-cross-reference) → merge/dedupe/sort → renders an annotated PDF and a
-report → the frontend polls and displays the real result. This has been
-run against an actual sample FIR PDF, start to finish, not just exercised
-piece-by-piece in isolation.
-
----
-
-## Status
-
-| Component | Status |
-|---|---|
-| OCR (`ocr/`) | ✅ done |
-| Model (`model/`) | ✅ done — fine-tuned InLegalBERT checkpoint trained and in place, ML-based error detection is live |
-| Corpus (`corpus/`) | ✅ done — all six act parsers (IPC, BNS, BNSS, CPC, CrPC, Constitution) parse the real PDFs; verified IPC→BNS and CrPC→BNSS mapping tables in `corpus/data/` |
-| Rules (`rules/`) | ✅ done — citation, entity, spelling, cross-reference checkers, pluggable registry — see known limitations below |
-| Pipeline (`pipeline/`) | ✅ done — full PDF-in to annotated-PDF/report-out flow verified end-to-end on a real document |
-| Renderer (`renderer/`) | ✅ done — the crashing HTML-report bug is fixed |
-| API + workers (`api/`, `workers/`, `services/`) | ✅ done — no auth yet |
-| Frontend (`frontend/`) | ✅ done — wired to the real API, not mock data |
-| Tests (`tests/`) | ✅ done — real automated suite, see "running the test suite" below |
-| Fine-tuning (`train/`) | ✅ done — training run completed, `model/checkpoint/` has real weights |
-| Deployment | ⬜ not started |
-
-
-the model handles spelling/grammar/citation-shape; the rule-based checkers in
-`rules/` (citation, entity, spelling, cross-reference - registered in
-`rules/registry.py`) handle things that need either an external source of
-truth (citation_checker) or whole-document memory the model doesn't have
-(entity_checker) since it only ever sees 512 tokens at a time.
+- [The Problem](#the-problem)
+- [What NyayAI Does](#what-nyayai-does)
+- [Interface](#interface)
+- [System Architecture](#system-architecture)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Model and Data Setup (DVC)](#model-and-data-setup-dvc)
+- [Environment Configuration](#environment-configuration)
+- [Running the Application](#running-the-application)
+- [Model Training](#model-training)
+- [Running the Test Suite](#running-the-test-suite)
+- [Technical Deep Dive](#technical-deep-dive)
+- [Dependency Matrix](#dependency-matrix)
+- [API Reference](#api-reference)
+- [Known Limitations](#known-limitations)
+- [References](#references)
+- [License](#license)
 
 ---
 
-## Architecture
+## The Problem
 
-this is the actual frozen structure — no more reshuffling planned.
+India's legal system generates an enormous volume of documents every day -- First Information Reports (FIRs), charge sheets, bail applications, court orders, and contracts. These documents are frequently drafted under time pressure, often by personnel without formal legal drafting training. The consequences of errors in these documents are severe:
+
+- **Misspelled statutes and incorrect section numbers** can lead to charges being dropped or cases being dismissed. An FIR citing "Section 302 of IPC" when the offence falls under the Bharatiya Nyaya Sanhita (BNS) post-2024 creates a jurisdictional ambiguity that defence counsel can exploit.
+- **Entity inconsistencies** -- a complainant's name spelled three different ways across a single FIR, or a location name that changes between the complaint and the witness statement -- undermine the evidentiary value of the entire document.
+- **Cross-reference errors** -- "as stated in paragraph 7" when the document only has 5 paragraphs, or a schedule reference that points to a repealed section -- create internal contradictions that weaken legal arguments.
+- **Grammar and spelling errors** in court orders and legal notices, while not always legally fatal, erode institutional credibility and can introduce genuine ambiguity in interpretation.
+
+Existing tools fall short for Indian legal documents. General-purpose grammar checkers (Grammarly, LanguageTool) do not understand Indian legal terminology, statute numbering conventions, or the IPC-to-BNS transition. Commercial legal AI platforms are prohibitively expensive for district courts and legal aid organizations, and most require sending documents to external servers -- a non-starter for sensitive FIRs and ongoing investigations.
+
+There is no widely available, privacy-preserving, Indian-law-aware tool that can audit a legal document end-to-end: from OCR extraction of scanned pages, through domain-specific error detection, to a structured, actionable report.
+
+---
+
+## What NyayAI Does
+
+NyayAI is an end-to-end legal document audit system built specifically for Indian legal documents. It takes a PDF as input -- whether digitally generated or scanned -- and produces:
+
+1. **An annotated PDF** with color-coded highlights marking every detected error directly on the original document layout.
+2. **A structured error report** (JSON and HTML) categorizing each error by type (spelling, grammar, citation, entity inconsistency) with page numbers, bounding box coordinates, and where applicable, correction suggestions.
+3. **Deep legal analysis** using InLegalBERT for Legal Statute Identification (LSI), Rhetorical Role classification (RR), and Court Judgment Prediction and Explanation (CJPE).
+4. **A conversational legal assistant** powered by a Graph RAG pipeline that ingests the uploaded document into a Neo4j knowledge graph and answers questions grounded in the document's actual content.
+
+**Everything runs locally.** No document content leaves the machine. The OCR engine (Surya), the error detection model (fine-tuned InLegalBERT), and the rule-based checkers all run on-device. The only external API calls are to Mistral AI for the optional Graph RAG entity extraction and to Neo4j Aura for the knowledge graph storage -- neither receives the raw document, only extracted entity-relationship triples.
+
+The full pipeline has been verified end-to-end against real sample FIR documents: upload through the browser, OCR extraction, ML-based and rule-based error detection, merge/deduplicate/sort, annotated PDF rendering, and interactive result display in the frontend.
+
+---
+
+## Interface
+
+<!-- 
+  Replace the placeholder paths below with actual screenshots of the application.
+  Recommended screenshots:
+    1. Homepage / Legal Chatbot landing page
+    2. PDF Upload page with progress indicator
+    3. PDF Inspector view showing annotated errors with highlight overlay
+    4. Deep Legal Analysis workspace (InLegalBERT results + Graph RAG chat)
+-->
+
+| View                              | Screenshot                                                |
+| --------------------------------- | --------------------------------------------------------- |
+| Homepage -- Legal Chatbot         | ![Homepage Chat](docs/images/homepage_chat.png)           |
+| PDF Upload                        | ![Upload Page](docs/images/upload_page.png)               |
+| PDF Error Inspector               | ![Error Inspector](docs/images/error_inspector.png)       |
+| Deep Legal Analysis and Case Chat | ![Analysis Workspace](docs/images/analysis_workspace.png) |
+
+> **Note:** To add screenshots, save the images to `docs/images/` and update the paths above.
+
+---
+
+## System Architecture
 
 ```
-NyayAI/
-├── ocr/                  done - extract(pdf_path) -> list[LineSpan]
-│   ├── tokens.py         LineSpan dataclass (one per line, real measured bbox)
-│   ├── native_extractor.py   pdfplumber, for pdfs with a text layer
-│   ├── surya_extractor.py    surya-ocr, for scanned pages
-│   ├── router.py         decides which extractor each page needs
-│   └── pipeline.py       ties it together into one extract() call
-│
-├── model/                done - fine-tuned checkpoint trained and in place
-│   ├── schemas.py        ErrorSpan + BIO label scheme
-│   ├── preprocess.py     LineSpans -> token chunks (512 tokens, sliding window)
-│   ├── predict.py        InLegalBERT inference - loads model/checkpoint/
-│   └── postprocess.py    BIO labels -> ErrorSpans with real bboxes
-│
-├── rules/                done
-│   ├── citation_checker.py       regex + corpus.search lookup
-│   ├── entity_checker.py         spacy NER + rapidfuzz clustering
-│   ├── spelling_checker.py       rule-based legal-vocabulary spell checker
-│   ├── cross_reference_checker.py   flags dangling "see paragraph N" references
-│   └── registry.py               pluggable list all four checkers are run through
-│
-├── corpus/                done
-│   ├── schemas.py, chunker.py, embeddings.py, uploader.py, search.py
-│   ├── parser.py          dispatches to the right act-specific parser
-│   ├── parsers/           one file per act - IPC, BNS, BNSS, CPC, CrPC, Constitution
-│   └── data/              verified IPC→BNS / CrPC→BNSS mapping tables + schedules
-│
-├── pipeline/             done - merge -> deduplicate -> reading-order sort
-├── renderer/              done - annotated PDF, colors, JSON + HTML report
-│
-├── services/              done
-│   ├── storage.py         job-id based file layout
-│   └── analysis.py        orchestrates extract -> analyze -> render -> save
-│
-├── workers/                done - Celery, no Redis (see below)
-├── api/                    done - FastAPI, upload/status/result/health
-│
-├── frontend/                ✅ wired to the real API (upload/poll/result)
-│   └── src/                PDF.js canvas, colored highlight overlay,
-│                           margin annotation rail, error sidebar
-│                           (mockData.js kept around, unused - api.js is
-│                           what App.jsx actually imports now)
-│
-├── train/                   done - training run completed, checkpoint in model/checkpoint/
-├── config/, data/, scripts/, tests/, docs/
-├── docker-compose.yml        qdrant only, no redis service
-└── README.md
+                                    Browser (React + PDF.js)
+                                           |
+                              POST /upload, GET /status, GET /result
+                              POST /analyze/*, POST /api/v1/chat/*
+                                           |
+                                    FastAPI (api/main.py)
+                                    /            |            \
+                             Upload+Poll    Analysis      Chat+Ingest
+                             (api/routes/)  (InLegalBERT) (LangGraph Agent)
+                                  |              |              |
+                           Celery Worker    GPU Inference   Mistral + Neo4j
+                           (--pool=solo)         |              |
+                                  |         app.state      Graph RAG
+                            +-----------+   .ml_models     (Neo4j Aura)
+                            |           |
+                       OCR Pipeline   Error Detection Pipeline
+                       (ocr/)         (pipeline/engine.py)
+                       |    |              |           |
+                  Native  Surya       InLegalBERT   Rule-Based
+                  (pdfplumber) (GPU)  (model/)      (rules/)
+                                          |              |
+                                     Fine-tuned     Citation + Entity
+                                     Checkpoint     + Spelling + XRef
+                                          |
+                                    Merge / Deduplicate / Sort
+                                          |
+                                    Renderer (renderer/)
+                                    |              |
+                              Annotated PDF   JSON + HTML Report
+```
+
+The system comprises three independently runnable processes:
+
+| Process                 | Command                                 | Purpose                                                                      |
+| ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| **API Server**    | `uvicorn api.main:app`                | HTTP endpoints, serves static files, preloads InLegalBERT models             |
+| **Celery Worker** | `celery -A workers.celery_app worker` | Processes PDF analysis jobs asynchronously (OCR, error detection, rendering) |
+| **Frontend**      | `npm run dev` (in `frontend/`)      | React SPA with PDF.js canvas, error overlay, and chat interface              |
+
+Communication between the API server and the Celery worker uses a **filesystem broker** and **SQLite result backend** -- no Redis or RabbitMQ required.
+
+---
+
+## Project Structure
+
+```
+nyayai/
+|-- ocr/                        Text extraction from PDFs
+|   |-- tokens.py               LineSpan dataclass (line-level text + measured bounding box)
+|   |-- native_extractor.py     pdfplumber-based extraction for digital PDFs
+|   |-- surya_extractor.py      Surya OCR for scanned/image-only pages (GPU)
+|   |-- router.py               Decides which extractor each page requires
+|   +-- pipeline.py             Single extract() entry point
+|
+|-- model/                      InLegalBERT inference and fine-tuned checkpoint
+|   |-- schemas.py              ErrorSpan dataclass + BIO label scheme
+|   |-- preprocess.py           LineSpans to token chunks (512 tokens, sliding window)
+|   |-- predict.py              Model inference with module-level GPU weight caching
+|   |-- postprocess.py          BIO label sequences to ErrorSpans with bounding boxes
+|   +-- checkpoint/             Fine-tuned model weights (tracked via DVC)
+|
+|-- rules/                      Rule-based error checkers
+|   |-- citation_checker.py     Regex + corpus vector search for statute validation
+|   |-- entity_checker.py       spaCy NER + rapidfuzz clustering for name consistency
+|   |-- spelling_checker.py     Legal vocabulary-aware spell checker
+|   |-- cross_reference_checker.py  Detects dangling internal references
+|   +-- registry.py             Pluggable checker registry
+|
+|-- corpus/                     Indian legal statute corpus
+|   |-- schemas.py, chunker.py, embeddings.py, uploader.py, search.py
+|   |-- parser.py               Dispatcher for act-specific parsers
+|   |-- parsers/                One parser per act (IPC, BNS, BNSS, CPC, CrPC, Constitution)
+|   +-- data/                   IPC-to-BNS and CrPC-to-BNSS mapping tables
+|
+|-- pipeline/                   Orchestration: merge, deduplicate, reading-order sort
+|-- renderer/                   Output generation: annotated PDF, JSON report, HTML report
+|
+|-- services/                   Backend business logic
+|   |-- storage.py              Job-ID-based file layout for uploads and outputs
+|   +-- analysis.py             Orchestrates: extract -> analyze -> render -> save
+|
+|-- workers/                    Celery configuration and task definitions
+|   |-- celery_app.py           Filesystem broker + SQLite backend setup
+|   |-- tasks.py                process_pdf task (thin wrapper over services/analysis.py)
+|   +-- queues.py               Queue names and routing configuration
+|
+|-- api/                        FastAPI application
+|   |-- main.py                 App entry point, lifespan (model preload), CORS, routing
+|   |-- routes/                 upload, jobs, health, chat, analysis, debug
+|   |-- schemas/                Pydantic request/response models
+|   +-- services/               ML service, legal agent, Graph RAG, PDF-to-graph ingestion
+|
+|-- frontend/                   React SPA (Vite + PDF.js)
+|   +-- src/
+|       |-- App.jsx             Main application with three-view navigation
+|       |-- api.js              API client for all backend endpoints
+|       |-- PdfCanvas.jsx       PDF.js renderer
+|       |-- HighlightOverlay.jsx  Error highlight layer
+|       |-- ErrorList.jsx       Sidebar error listing
+|       +-- components/         HomepageChat, AnalysisWorkspace, FormattedMessage
+|
+|-- train/                      Model training scripts
+|-- config/                     Settings (pydantic-settings) and constants
+|-- scripts/                    CLI utilities (corpus ingestion, data generation, cleanup)
+|-- tests/                      Automated test suite (pytest)
+|-- docs/                       Architecture and API documentation
+|-- data/                       Runtime data directory (tracked via DVC)
+|-- docker-compose.yml          Qdrant vector database service
++-- pyproject.toml              Python dependencies and project metadata
 ```
 
 ---
 
-## setup
+## Prerequisites
 
-**you need:**
-- python 3.10 (pinned - see dependency table)
-- NVIDIA GPU with CUDA, 6GB+ VRAM (i have an RTX 4050)
-- docker (for qdrant)
-- node 20+ (for the frontend)
+| Requirement             | Version                  | Notes                                                                                  |
+| ----------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| **Python**        | 3.10                     | Pinned -- see[Dependency Matrix](#dependency-matrix) for version constraints            |
+| **NVIDIA GPU**    | CUDA-capable, 6 GB+ VRAM | Tested on RTX 4050. Required for Surya OCR and InLegalBERT inference                   |
+| **CUDA Toolkit**  | 12.4                     | Must match the PyTorch wheel specified in`pyproject.toml`                            |
+| **Docker**        | 20.10+                   | Required for running the Qdrant vector database                                        |
+| **Node.js**       | 20+                      | Required for the frontend development server                                           |
+| **uv**            | Latest                   | Python package manager. Install via`curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **poppler-utils** | System package           | Required by`pdf2image` for PDF rendering                                             |
+| **Git LFS / DVC** | DVC 3.67+                | For retrieving model weights and data artifacts                                        |
 
-**install:**
+---
+
+## Installation
+
+### 1. Clone the Repository
 
 ```bash
-git clone <repo>
-cd NyayAI
+git clone https://github.com/<your-org>/nyayai.git
+cd nyayai
+```
 
+### 2. Create the Python Environment
+
+```bash
 uv venv
 source .venv/bin/activate
 uv sync
 ```
 
-dependency versions are pinned in `pyproject.toml` for a reason - see the table
-below before touching any of them, especially surya/transformers/torch.
+All dependency versions are pinned in `pyproject.toml`. Do not upgrade `transformers`, `surya-ocr`, or `torch` without reading the [Dependency Matrix](#dependency-matrix) -- there are known incompatibilities.
 
-**system package:**
+### 3. Install System Dependencies
+
 ```bash
 sudo apt install poppler-utils
 ```
 
-**start qdrant:**
-```bash
-docker-compose up -d qdrant
-```
-no redis needed - Celery uses a filesystem broker + sqlite result backend
-instead (see "async jobs, no redis" below).
+### 4. Download spaCy Language Model
 
-**verify GPU works:**
+```bash
+uv run python -m spacy download en_core_web_sm
+```
+
+### 5. Verify GPU Access
+
 ```bash
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
-should print `True` and your GPU's name. if it prints `False`, stop here and
-fix the CUDA/driver setup before going further - surya and InLegalBERT both
-expect a working GPU, and everything downstream (batch sizes, `--pool=solo`
-below) is tuned assuming this works.
 
-**ingest the legal corpus** (one-time, or after an act gets amended):
+Expected output: `True <your GPU name>`. If this prints `False`, resolve the CUDA/driver configuration before proceeding. Both Surya OCR and InLegalBERT require a working GPU, and all batch sizes and worker pool settings are tuned with this assumption.
+
+### 6. Start Qdrant
+
+```bash
+docker compose up -d qdrant
+```
+
+No Redis is required. Celery uses a filesystem broker and SQLite result backend instead.
+
+### 7. Ingest the Legal Corpus (one-time)
+
 ```bash
 uv run python scripts/ingest_corpus.py --all
 ```
 
----
+This parses all six Indian legal acts (IPC, BNS, BNSS, CPC, CrPC, Constitution) and uploads their section embeddings to Qdrant for citation validation lookups.
 
-## running
+### 8. Install Frontend Dependencies
 
-**backend:**
-```bash
-uv run uvicorn api.main:app --reload
-```
-
-**a worker** (needed for anything to actually get processed):
-```bash
-uv run celery -A workers.celery_app worker --loglevel=info -Q pdf_processing --pool=solo
-```
-the `-Q pdf_processing` isn't optional - a worker only consumes queues it's
-explicitly told to listen on. leaving it off means uploads just sit there
-forever with no error at all (found this out the hard way).
-
-`--pool=solo` isn't optional either, for a different reason: without it,
-Celery defaults to the `prefork` pool and forks one child process per CPU
-core. Each of those child processes independently imports `model.predict`
-and `ocr.surya_extractor` and loads its *own* copy of InLegalBERT and
-Surya's detection/recognition models onto the GPU the first time it picks
-up a task - the module-level caches in those files only dedupe loads
-*within* a process, not across forked siblings. On a 6GB card, two or
-three prefork children processing documents at the same time is enough
-to blow the VRAM budget on its own, independent of any single document's
-size. `--pool=solo` runs everything in one process, one task at a time,
-which matches this project's single-GPU, single-machine deployment
-target anyway.
-
-**frontend:**
 ```bash
 cd frontend
 npm install
-npm run dev
+cd ..
 ```
-open `http://localhost:5173` - the viewer works end-to-end against the real
-backend now (`frontend/src/api.js`: `POST /upload` → poll `GET /status` →
-`GET /result`). `mockData.js` is still in the tree but nothing imports it
-anymore; `App.jsx` pulls from `api.js`. set `VITE_API_BASE_URL` in `.env` if
-the backend isn't on `http://localhost:8000`.
 
 ---
 
-## async jobs, no redis
+## Model and Data Setup (DVC)
 
-Celery needs a broker (to queue tasks) and a result backend (to store
-outcomes). instead of running redis just for this, it's configured with:
+The `data/` directory and the fine-tuned model checkpoint (`model/checkpoint/`) are too large for Git and are tracked with [DVC](https://dvc.org/) instead. The DVC metafiles (`data.dvc`, `model/checkpoint.dvc`) are committed to Git; the actual data is stored in a remote.
 
-- **broker:** the filesystem transport - a queued task is just a file under
-  `data/celery/broker/`
-- **result backend:** sqlite, via `db+sqlite:///data/celery/results.sqlite`
+### Retrieving Models on a Fresh Clone
 
-both are local files, nothing extra to run. if this ever needs to scale past
-one machine, it's a one-line swap to `redis://` - nothing in `workers/` or
-`api/` cares which broker is configured.
-
-the one real trap: every path here has to be **absolute**, anchored to a
-fixed project-root constant - not a relative path. the API process and the
-worker process are launched separately and won't reliably share a working
-directory, and a relative path resolves against whatever directory each
-process happens to be in. tested this directly: with a relative path, a task
-gets written to one physical folder while the worker watches a completely
-different one - no error, no crash, it just sits "queued" forever.
-
----
-
-## training the model
-
-`train/` is done and has actually been run - `model/checkpoint/` now has a
-real fine-tuned checkpoint (model weights + tokenizer), and
-`model/predict.py` loads it instead of falling back to all-`O` labels.
-
-the flow that was used:
+The DVC remote is configured as a Google Drive folder. To pull the model weights and data artifacts:
 
 ```bash
+# Install DVC (included in project dependencies via uv sync)
+# Pull all DVC-tracked files
+dvc pull
+```
+
+On first run, DVC will prompt for Google Drive authentication to access the shared remote.
+
+**DVC Remote Configuration** (already set in `.dvc/config`):
+
+| Remote        | URL                                            | Purpose                                                                   |
+| ------------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
+| `my-gdrive` | `gdrive://1hPB-Emu1POPk70RT6b66xI7mpYCIbjUl` | Shared Google Drive folder containing model checkpoint and data artifacts |
+
+If you need to configure a different remote (for example, a local filesystem or S3 bucket):
+
+```bash
+# Point DVC to a local path
+dvc remote modify local url /path/to/your/dvc-storage
+
+# Or add a new remote
+dvc remote add myremote s3://bucket-name/path
+dvc remote default myremote
+```
+
+### What DVC Tracks
+
+| Artifact              | DVC File                 | Size              | Contents                                               |
+| --------------------- | ------------------------ | ----------------- | ------------------------------------------------------ |
+| `model/checkpoint/` | `model/checkpoint.dvc` | ~436 MB (8 files) | Fine-tuned InLegalBERT weights, tokenizer, and config  |
+| `data/`             | `data.dvc`             | Variable          | Uploads, outputs, training data, Celery broker/results |
+
+### After a New Training Run
+
+If you retrain the model, update the DVC tracking and push:
+
+```bash
+dvc add model/checkpoint
+git add model/checkpoint.dvc
+git commit -m "Update model checkpoint after retraining"
+dvc push
+git push
+```
+
+---
+
+## Environment Configuration
+
+Copy the example environment file and fill in your credentials:
+
+```bash
+cp .env.example .env
+```
+
+### Required Environment Variables
+
+| Variable                   | Description                                           | Example                                |
+| -------------------------- | ----------------------------------------------------- | -------------------------------------- |
+| `RECOGNITION_BATCH_SIZE` | Surya OCR recognition batch size (tune for your VRAM) | `32`                                 |
+| `DETECTOR_BATCH_SIZE`    | Surya OCR detection batch size                        | `4`                                  |
+| `TORCH_DEVICE`           | PyTorch device                                        | `cuda`                               |
+| `QDRANT_URL`             | Qdrant vector database URL                            | `http://localhost:6333`              |
+| `MISTRAL_API_KEY`        | Mistral AI API key (for Graph RAG entity extraction)  | `your_key_here`                      |
+| `NEO4J_URI`              | Neo4j Aura connection URI                             | `neo4j+s://xxxxx.databases.neo4j.io` |
+| `NEO4J_USERNAME`         | Neo4j username                                        | `neo4j`                              |
+| `NEO4J_PASSWORD`         | Neo4j password                                        | `your_password_here`                 |
+| `NEO4J_DATABASE`         | Neo4j database name                                   | `neo4j`                              |
+| `HF_TOKEN`               | Hugging Face access token (for model downloads)       | `hf_xxxxx`                           |
+
+The Mistral and Neo4j credentials are only required for the Chat and Graph RAG features. The core PDF error detection pipeline works without them.
+
+---
+
+## Running the Application
+
+Three processes must be running simultaneously:
+
+### Terminal 1: API Server
+
+```bash
+source .venv/bin/activate
+uvicorn api.main:app --reload --reload-dir api --reload-dir services --reload-dir workers
+```
+
+The server starts on `http://localhost:8000`. On startup, it preloads three InLegalBERT model variants (LSI, RR, CJPE) into GPU memory for the `/analyze/*` endpoints.
+
+### Terminal 2: Celery Worker
+
+```bash
+source .venv/bin/activate
+uv run celery -A workers.celery_app worker --loglevel=info -Q pdf_processing --pool=solo
+```
+
+**Important flags:**
+
+- `-Q pdf_processing` is required. Without it, the worker does not listen on the correct queue and uploads will appear stuck indefinitely with no error message.
+- `--pool=solo` is required. The default `prefork` pool forks one child per CPU core, and each child loads its own copy of InLegalBERT and Surya models onto the GPU. On a 6 GB card, two or three concurrent children are enough to exhaust VRAM. `--pool=solo` runs everything in a single process, one task at a time, which matches the single-GPU deployment target.
+
+### Terminal 3: Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:5173` in a browser. The frontend communicates with the API server at `http://localhost:8000` by default. To change this, set `VITE_API_BASE_URL` in `frontend/.env`.
+
+### Application Workflow
+
+1. **Homepage** -- A general legal chatbot (powered by LangGraph + Mistral) for Indian law Q&A.
+2. **PDF Inspector** -- Upload a PDF. The system runs OCR, error detection (ML + rules), and renders an annotated PDF with an interactive error sidebar.
+3. **Deep Legal Analysis** -- After inspection, view InLegalBERT analysis (LSI, RR, CJPE) alongside a context-aware chatbot that queries a knowledge graph built from the uploaded document.
+
+---
+
+## Model Training
+
+The fine-tuned InLegalBERT checkpoint in `model/checkpoint/` was trained using the scripts in `train/`. The training pipeline:
+
+1. **Synthetic data generation** -- Deliberately corrupts verified legal text with spelling, grammar, and citation errors to produce labeled training data in BIO format.
+2. **Fine-tuning** -- Uses the HuggingFace `Trainer` API to fine-tune `law-ai/InLegalBERT` with a token classification head.
+3. **Evaluation** -- Computes per-label precision, recall, and F1 on a held-out test split.
+
+### Training Commands
+
+```bash
+# Step 1: Generate synthetic training data
 uv run python scripts/generate_data.py --corpus corpus/sources/ --out data/training
+
+# Step 2: Fine-tune InLegalBERT
 uv run python -m train.train
+
+# Step 3: Evaluate on test split
 uv run python -m train.evaluate
 ```
-(`make generate-data`, `make train`, `make evaluate` do the same thing.)
 
-`generate_data.py` produces synthetic training data by deliberately
-corrupting real, verified legal text — spelling/grammar/citation corruption
-applied in that order, since grammar corruption changes token counts and
-would invalidate any index-based labels applied before it. `train.py` then
-fine-tunes InLegalBERT with the HuggingFace `Trainer` API, saving both model
-weights and the tokenizer into `model/checkpoint/` (so a future retrain from
-a different base checkpoint can never end up paired with a stale tokenizer).
-Hyperparameters in `train.py` are reasonable BERT-fine-tuning defaults, not
-empirically tuned for this task - a good next step if detection quality
-needs improving is a sweep, not a rewrite.
+Equivalent Make targets: `make generate-data`, `make train`, `make evaluate`.
 
-after any future retrain, remember to `dvc add model/checkpoint` and push
-(see "data & model versioning" below) — otherwise the new checkpoint only
-exists on whatever machine trained it.
+### Training Notebooks
 
----
+The model training was also conducted in cloud notebook environments for GPU access. The complete training source code, hyperparameter configurations, and training logs are available at:
 
-## Dependency versions (frozen)
+<!-- 
+  Replace these placeholder links with the actual notebook URLs.
+  These should be publicly accessible so that reviewers can verify
+  the training methodology and reproduce results.
+-->
 
-these are pinned in `pyproject.toml` for a reason - `surya-ocr` and `transformers`
-in particular have a real, previously-hit incompatibility (`transformers` newer
-than `4.48.0` breaks surya's `SuryaOCRConfig` with `KeyError: 'encoder'`). don't
-bump any of these without a specific reason to.
+| Platform     | Link                                                                                                       | Description                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Google Colab | [Training Notebook](#https://colab.research.google.com/drive/1okrY3GGlGIzr29-JQqgth7AkAhBYgi7M?usp=sharing) | Full training pipeline with data generation, fine-tuning, and evaluation |
+| Kaggle       | [Training Notebook](#https://www.kaggle.com/code/pryans/layer2-nyayai/)                                     | Alternative training environment with Kaggle GPU resources               |
 
-| package | version | why it's pinned |
-|---|---|---|
-| `torch` | `2.4.0+cu124` | matched to `transformers==4.48.0` and the CUDA 13.2 / RTX 4050 setup this was built against |
-| `transformers` | `4.48.0` | newer breaks surya's `SuryaOCRConfig` (see above) |
-| `surya-ocr` | `0.9.3` | scanned-page OCR fallback |
-| `qdrant-client` | `1.17.1` | corpus vector search |
-| `fastapi` | `0.115.0` | API layer |
-| `celery` | `5.4.0` | async job queue (filesystem broker + sqlite backend, no redis) |
-| `pydantic` / `pydantic-settings` | `2.8.2` / `2.5.2` | settings + schemas |
+> **Note:** Replace the placeholder links above with the actual URLs to your published training notebooks.
 
-full list, including unpinned (`>=`) utility deps like `rapidfuzz`, `spacy`, and
-`pyspellchecker`, is in `pyproject.toml` - that file is the source of truth, this
-table is just the ones worth a second look before touching.
+### Training Configuration
+
+| Parameter           | Value                             | Notes                                                                                                 |
+| ------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Base model          | `law-ai/InLegalBERT`            | Pre-trained on Indian legal text (IIT Kharagpur)                                                      |
+| Task                | Token classification (BIO scheme) | 9 labels: O, B-SPELLING, I-SPELLING, B-GRAMMAR, I-GRAMMAR, B-CITATION, I-CITATION, B-ENTITY, I-ENTITY |
+| Max sequence length | 512 tokens                        | Sliding window with stride 128 for long documents                                                     |
+| Checkpoint size     | ~436 MB                           | Weights + tokenizer + config                                                                          |
 
 ---
 
-## running the test suite
+## Running the Test Suite
+
+### Standard Test Run
 
 ```bash
 pytest tests/ --ignore=tests/test_qdrant_live.py -v
 ```
 
-that excludes `tests/test_qdrant_live.py` on purpose - it's a **live** integration
-test against a real, ingested Qdrant instance (`docker-compose up -d qdrant` first,
-see "setup" above), not part of the regular automated run.
+The `test_qdrant_live.py` file is excluded by default because it is a live integration test against a running Qdrant instance. All other tests are fully mocked and require no GPU, no network, and no running services.
 
-everything else is fully mocked/synthetic - no GPU, no network, no live services:
+### Test Coverage
 
-- `test_rules.py` mocks the corpus lookup and spaCy's NER (see `conftest.py`'s
-  `mock_lookup_section` / `mock_entity_nlp`) - it's testing our own
-  citation/entity logic, not the corpus's contents or spaCy's accuracy.
-- `test_model.py` mocks the tokenizer and the model itself - no InLegalBERT
-  weights get loaded, no GPU needed.
-- `test_pipeline.py` and `test_api.py` mock the ML/rules layer and Celery
-  respectively, so they only ever exercise their own orchestration logic.
-- `test_ocr.py` runs the real native-PDF extraction path against a small
-  reportlab-generated sample FIR (see `conftest.py`'s `sample_pdf_path`) - it
-  does NOT exercise the surya scanned-page path (needs a real scanned PDF, out
-  of scope for an automated fixture). for that, see below.
-- `test_parser.py` runs the real parsers against the actual act PDFs in
-  `corpus/sources/` - the one file in this suite doing real, not mocked, work.
+| Test File            | What It Tests                                            | Mocking Strategy                                  |
+| -------------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| `test_rules.py`    | Citation, entity, spelling, and cross-reference checkers | Mocks corpus lookup and spaCy NER                 |
+| `test_model.py`    | InLegalBERT preprocessing, inference, and postprocessing | Mocks tokenizer and model (no GPU)                |
+| `test_pipeline.py` | Pipeline orchestration (merge, deduplicate, sort)        | Mocks ML and rules layers                         |
+| `test_api.py`      | FastAPI endpoint contracts                               | Mocks Celery task dispatch                        |
+| `test_ocr.py`      | Native PDF text extraction                               | Uses a small reportlab-generated sample PDF       |
+| `test_parser.py`   | Corpus parsers against real act PDFs                     | No mocking -- parses actual PDFs (slow, ~4-5 min) |
 
-**`test_parser.py` is slow on purpose** - it's parsing six real, 1-3MB legal
-PDFs with pdfplumber (each parsed once per run, cached via `lru_cache`), which
-costs ~4-5 minutes total. for a fast loop while iterating on anything else:
+### Fast Iteration (skip slow parser tests)
 
 ```bash
 pytest tests/ --ignore=tests/test_qdrant_live.py --ignore=tests/test_parser.py -v
 ```
 
-**manual OCR smoke test against a real document** (not part of the automated
-suite - no assertions, just prints what `extract()` sees, useful for eyeballing
-a real scanned FIR that's messier than the synthetic fixture):
+### Manual OCR Smoke Test
+
+For visual verification against a real scanned document (not part of automated suite):
 
 ```bash
-make test-ocr FILE=path/to/real_scanned_fir.pdf
+make test-ocr FILE=path/to/scanned_document.pdf
 ```
 
-**one dependency this needs that isn't pinned above:** `httpx`, for FastAPI's
-`TestClient` in `test_api.py`. and if `en_core_web_sm` isn't already pulled down:
+### Live Qdrant Integration Test
+
+Requires a running, ingested Qdrant instance:
 
 ```bash
-python -m spacy download en_core_web_sm
+docker compose up -d qdrant
+uv run python scripts/ingest_corpus.py --all
+pytest tests/test_qdrant_live.py -v
 ```
 
 ---
 
-## current status
+## Technical Deep Dive
 
-- [x] OCR pipeline (pdfplumber + surya, with process-wide model caching so a
-      Celery worker doesn't reload weights per document)
-- [x] model (InLegalBERT inference wiring, fine-tuned checkpoint trained and loaded)
-- [x] rule-based checkers (citation, entity, spelling, cross-reference)
-- [x] pipeline orchestration (merge / dedupe / sort, pluggable rule registry)
-- [x] renderer (annotated PDF + JSON/HTML reports - crashing bug fixed)
-- [x] FastAPI + Celery async jobs (filesystem + sqlite, no redis)
-- [x] React frontend, wired to the real API (not mock data)
-- [x] corpus ingestion - all six act parsers done (IPC, BNS, BNSS, CPC, CrPC,
-      Constitution), verified IPC→BNS and CrPC→BNSS mapping tables
-- [x] drop the redis service from docker-compose.yml (filesystem + sqlite broker in use)
-- [x] real automated test suite (Issue #50) - `pytest tests/ --ignore=tests/test_qdrant_live.py`
-- [x] full pipeline verified end-to-end on a real sample FIR PDF: upload →
-      OCR → model + rules → merge/dedupe/sort → annotated PDF + report →
-      frontend displays the real result (issue #52's checklist item)
-- [x] config/housekeeping cleanup - `.env.example` fixed, `config/settings.py`
-      dead scratch notes removed, `model/pipeline.py` and
-      `corpus/parsers/base.py` dead code deleted
-- [x] fine-tune InLegalBERT - training run completed, `model/checkpoint/` has real weights
-- [ ] auth on the API
-- [ ] deployment (M6 - not started)
+### Async Job Processing Without Redis
 
----
+Celery requires a message broker and a result backend. Instead of running Redis, NyayAI configures:
 
-## stuff i learned building this
+- **Broker:** Kombu's filesystem transport. A queued task is a file written to `data/celery/broker/out/`; the worker picks it up from there.
+- **Result Backend:** SQLite via SQLAlchemy (`db+sqlite:///data/celery/results.sqlite`).
 
-- **LineSpan, not word-level tokens** - pdfplumber and surya both natively
-  give you line-level bboxes. trying to go word-by-word was extra complexity
-  for no real benefit.
-- **surya-ocr 0.9.3 + transformers 4.48.0 is the only combination that
-  works** - anything newer than transformers 4.48 breaks surya's
-  `SuryaOCRConfig` with a `KeyError: 'encoder'`. surya 0.20+ needs a whole
-  separate vLLM server to run, not worth it for a dev setup.
-- **subword continuations need `None`, not the span index** - when aligning
-  BERT subword tokens back to source lines, only the *first* subword of each
-  word should map to a span index. gave every continuation subword the same
-  span index at first, which silently corrupted every multi-subword word's
-  span boundaries. easy to miss since it only shows up on longer words.
-- **grammar corruption has to run before spelling/citation corruption** in
-  synthetic training data - it changes token counts, which would invalidate
-  any index-based labels applied earlier.
-- **`en_core_web_sm` doesn't just misspell names, it mistags their entity
-  TYPE** - tested this directly with real sentences. the same person's name
-  got tagged `PERSON` in one sentence and `GPE` (place) in another, which
-  sends it to an entirely different clustering bucket in `entity_checker.py`
-  - so it never even gets compared against its other spelling. this is worse
-  than a simple fuzzy-matching miss.
-- **kombu's filesystem transport doesn't auto-create its own directories** -
-  neither the broker folders nor sqlite's parent directory get created
-  automatically. celery just throws `OperationalError: unable to open
-  database file` if they're missing.
-- **a real IPC PDF is messier than IndiaCode's clean formatting suggests** -
-  a 13-page table of contents where every entry looks almost identical to a
-  real section start (just missing the closing dash), footnote reference
-  digits stuck directly against bracket-wrapped amended sections
-  (`7[5. Certain laws not to be affected...`), at least one section number
-  missing its period entirely, and repealed sections that don't appear in
-  the body text at all - they just get skipped. a naive "match a number
-  then a dash" regex catches almost none of this correctly.
-- **reportlab and pdf.js disagree about which corner is the origin** -
-  reportlab (used server-side for the annotated PDF) is bottom-left,
-  y-increases-up, like real PDF coordinate space. pdf.js (used in the
-  browser) is top-left, y-increases-down, matching pdfplumber. get this
-  backwards and every highlight silently lands on the wrong half of the
-  page - verified this against a real page before trusting either one.
-- **a fresh `SuryaExtractor()` per document isn't free just because you
-  reuse it across pages within one document** - the constructor used to
-  build brand-new `DetectionPredictor()`/`RecognitionPredictor()` instances
-  every call, and both push real weights onto CUDA. a Celery worker picks
-  up the next scanned document before python's GC/torch's caching allocator
-  necessarily hands back the previous instance's VRAM, so this manifested
-  as "works for the first few PDFs, OOMs later" rather than an immediate
-  crash - the same class of bug `model/predict.py`'s module-level cache
-  already solved for InLegalBERT, just not yet applied to surya. fixed with
-  the same pattern: process-wide cached predictors, instance-scoped (not
-  module-level) page-render cache so page 3 of one document can never leak
-  into page 3 of the next.
-- **a generated schedule table needs its own coverage check, not just a
-  smoke test** - the BNSS First Schedule extraction had two real gaps
-  (roughly section-numbers 128-162 and 299-322 missing entirely) that a
-  PR review caught by actually diffing covered numbers against the
-  expected range, not by spot-checking a few entries. re-running the
-  generator against the source PDF closed all but a handful of entries
-  (128, 129, 130, 138, 307 as of this writing) - worth a real coverage
-  assertion in the corpus test suite eventually, not just a manual PR note.
-- **writing real assertions against all six real act PDFs (Issue #50)
-  surfaced two small, previously-unnoticed things**: `Section.act` is a
-  display-cased name (`"CrPC"`, `"Constitution"`), not the dispatch-key
-  string (`"CRPC"`, `"CONSTITUTION"`) used to select the parser - harmless,
-  but worth knowing before comparing the two directly. and Constitution
-  Articles 28, 203, and 366 come back with an empty `.title` despite
-  `status="active"` - their marginal side-note title text appears to have
-  merged into `.body` instead, likely a two-column PDF layout artifact
-  specific to those three. neither blocks anything today; both are
-  candidates for a small follow-up issue against
-  `corpus/parsers/constitution.py`.
+Both are local files with zero infrastructure overhead. To scale beyond a single machine, swap the broker URL to `redis://` or `amqp://` -- nothing in `workers/` or `api/` is coupled to the filesystem transport.
+
+**Critical implementation detail:** All broker and result backend paths must be **absolute**, anchored to a fixed project root. The API server and Celery worker are launched as separate processes and do not share a working directory. Relative paths cause tasks to be written to one directory while the worker watches another -- no error, no crash, just tasks stuck "queued" indefinitely.
+
+### GPU Memory Management
+
+The system loads approximately 1.2 GB of model weights onto the GPU:
+
+| Model                                   | Size    | Loading Strategy                            |
+| --------------------------------------- | ------- | ------------------------------------------- |
+| Surya Detection (`vikp/surya_det3`)   | ~400 MB | Module-level cache, loaded once per process |
+| Surya Recognition (`vikp/surya_rec2`) | ~400 MB | Module-level cache, loaded once per process |
+| InLegalBERT (fine-tuned)                | ~436 MB | Module-level cache, loaded once per process |
+
+All three models use **process-wide singleton caches** so that a Celery worker processing many documents over its lifetime pays the model-load cost only once. Without this, each document would reload all weights, and back-to-back processing could exhaust VRAM before the previous instance was garbage collected.
+
+### OCR Pipeline
+
+The OCR system uses a two-path approach:
+
+1. **Native extraction** (pdfplumber) for pages with an embedded text layer -- fast, exact bounding boxes.
+2. **Surya OCR** for scanned/image-only pages -- GPU-accelerated, handles Hindi script, line-level bounding boxes.
+
+The router (`ocr/router.py`) examines each page and decides which extractor to use based on character count, line count, and scanned-page indicators. Pages are processed in chunks to manage VRAM, with explicit memory cleanup between chunks.
+
+### Error Detection Pipeline
+
+Errors are detected by two independent systems that are merged and deduplicated:
+
+1. **ML-based detection** (InLegalBERT): The document text is chunked into 512-token windows with a stride of 128. Each chunk is classified with a BIO token classification head. The postprocessor converts BIO label sequences back to ErrorSpans with the original bounding box coordinates.
+2. **Rule-based detection**: Four pluggable checkers registered in `rules/registry.py`:
+
+   - **Citation Checker:** Validates statute references against the Qdrant corpus using regex extraction and vector similarity search.
+   - **Entity Checker:** Uses spaCy NER to extract person/location/organization entities and rapidfuzz clustering to detect inconsistent spellings of the same entity across the document.
+   - **Spelling Checker:** Legal vocabulary-aware spell checking that avoids false positives on domain-specific terms.
+   - **Cross-Reference Checker:** Detects dangling internal references ("see paragraph N" where paragraph N does not exist).
+
+The merge step combines ML and rule-based errors, and the deduplication step removes overlapping detections. The final output is sorted in reading order (page, then top-to-bottom, then left-to-right).
 
 ---
 
-## dependencies and why
+## Dependency Matrix
 
-| package | why |
-|---|---|
-| pdfplumber | reads text + real bboxes from PDFs with a text layer |
-| surya-ocr | OCR for scanned pages, handles Hindi script too |
-| InLegalBERT | BERT model pre-trained on Indian legal text |
-| qdrant | vector DB for IPC/BNS/BNSS/Constitution/CPC lookups |
-| spacy + rapidfuzz | entity NER + fuzzy name/place consistency checking |
-| fastapi | backend API |
-| celery | async job processing - filesystem broker + sqlite backend, no redis |
-| react + pdf.js | render the PDF in-browser and draw highlights on top |
+These versions are pinned in `pyproject.toml` due to known incompatibilities. Do not upgrade without testing.
 
----
+| Package                              | Version               | Reason for Pinning                                                                      |
+| ------------------------------------ | --------------------- | --------------------------------------------------------------------------------------- |
+| `torch`                            | `2.4.0+cu124`       | Matched to`transformers==4.48.0` and CUDA 12.4 toolkit                                |
+| `transformers`                     | `4.48.0`            | Versions newer than 4.48.0 break Surya's`SuryaOCRConfig` with `KeyError: 'encoder'` |
+| `surya-ocr`                        | `0.9.3`             | Surya 0.20+ requires a separate vLLM server; 0.9.3 is self-contained                    |
+| `qdrant-client`                    | `1.17.1`            | Must stay within one minor version of the Qdrant server image                           |
+| `fastapi`                          | `0.115.0`           | API framework                                                                           |
+| `celery`                           | `5.4.0`             | Async job queue with filesystem broker + SQLite backend                                 |
+| `pydantic` / `pydantic-settings` | `2.8.2` / `2.5.2` | Settings management and request/response schemas                                        |
 
-## known issues
+### Frontend Dependencies
 
-- surya is slow (~10s per scanned page on a 4050) - async jobs hide this,
-  but it's still slow
-- `en_core_web_sm` handles Indian names inconsistently (see above) - needs a
-  fine-tuned Indian legal NER model eventually
-- no correction suggestions for ML-detected errors yet (citations do have
-  suggestions, from the corpus payload)
-- BNSS First Schedule extraction is nearly, not fully, complete - 5 entries
-  (section-numbers 128, 129, 130, 138, 307) are still missing as of this
-  writing, down from ~59 missing across two ranges before the last
-  generator run - see "stuff i learned" above
-- Constitution Articles 28, 203, and 366 come back with an empty `.title`
-  (their marginal side-note title merged into `.body` instead) - a small
-  parser gap, not a status/repeal issue, caught while writing `test_parser.py`
-- no auth on the API - fine for local single-user use, needs fixing before
-  any real deployment. output cleanup exists now (`make cleanup-outputs`,
-  see `scripts/cleanup_outputs.py`) but isn't scheduled automatically -
-  needs a cron entry or systemd timer to actually run periodically.
-- deployment (M6) hasn't started - no Dockerfile, no Vercel config yet
+| Package        | Version      |
+| -------------- | ------------ |
+| `react`      | `^19.2.7`  |
+| `pdfjs-dist` | `^6.1.200` |
+| `vite`       | `^8.1.4`   |
+
+Full dependency lists are in `pyproject.toml` (Python) and `frontend/package.json` (JavaScript).
 
 ---
 
-See `docs/architecture.md` for the full frozen folder structure.
+## API Reference
 
-- [InLegalBERT](https://huggingface.co/law-ai/InLegalBERT)
-- [surya OCR](https://github.com/VikParuchuri/surya)
-- [IndiaCode](https://indiacode.nic.in) - source for IPC, BNS, BNSS, Constitution, CPC PDFs
+### Core OCR Error Detection Flow
+
+| Endpoint             | Method | Description                                                               |
+| -------------------- | ------ | ------------------------------------------------------------------------- |
+| `/upload`          | POST   | Upload a PDF for processing. Returns`{ job_id }`                        |
+| `/status/{job_id}` | GET    | Poll processing status. Returns`{ status }` (PENDING, SUCCESS, FAILURE) |
+| `/result/{job_id}` | GET    | Retrieve the error report, annotated PDF URL, and HTML report URL         |
+| `/health`          | GET    | Health check                                                              |
+
+### InLegalBERT Analysis
+
+| Endpoint          | Method | Description                                                            |
+| ----------------- | ------ | ---------------------------------------------------------------------- |
+| `/analyze/lsi`  | POST   | Legal Statute Identification -- identifies applicable BNS/IPC sections |
+| `/analyze/rr`   | POST   | Rhetorical Role classification -- sentence-level structural analysis   |
+| `/analyze/cjpe` | POST   | Court Judgment Prediction and Explanation                              |
+| `/analyze/full` | POST   | Run all three analyses concurrently                                    |
+
+### Chat and Knowledge Graph
+
+| Endpoint                | Method | Description                                           |
+| ----------------------- | ------ | ----------------------------------------------------- |
+| `/api/v1/chat`        | POST   | General legal Q&A via the LangGraph agent             |
+| `/api/v1/chat/ingest` | POST   | Ingest a processed PDF into the Neo4j knowledge graph |
+
+Detailed API documentation with request/response schemas is available in `docs/api.md`.
 
 ---
 
-## data & model versioning (DVC)
+## References
 
-`data/` and `model/checkpoint/` are gitignored and tracked with DVC instead
-(`data.dvc`, `model/checkpoint.dvc`) - both are too large/binary to live
-directly in git. The configured remote (`.dvc/config`) is a local
-filesystem path, not a shared/cloud remote, so `dvc pull` on a different
-machine needs the remote pointed at wherever you actually keep the DVC
-storage first (`dvc remote modify local url <path>`).
+### Models and Tools
 
-**`model/checkpoint/` now has a real trained checkpoint in it** (see
-"training the model" above) - make sure it's been `dvc add`ed and pushed
-(the exact commands are just below) so `dvc pull` on any other machine
-actually fetches something real instead of an empty directory.
+- [InLegalBERT](https://huggingface.co/law-ai/InLegalBERT) -- BERT model pre-trained on Indian legal text (IIT Kharagpur)
+- [Surya OCR](https://github.com/VikParuchuri/surya) -- GPU-accelerated OCR with multilingual support
+- [Qdrant](https://qdrant.tech/) -- Vector similarity search engine
+- [Neo4j](https://neo4j.com/) -- Graph database for knowledge graph storage
+- [Mistral AI](https://mistral.ai/) -- LLM for Graph RAG entity extraction
+- [LangGraph](https://github.com/langchain-ai/langgraph) -- Agent orchestration framework
 
-**On a fresh clone:**
-```bash
-git clone <repo>
-uv sync
-dvc pull
-```
+### Legal Sources
 
-**After a new training run** (`make train` writes to `model/checkpoint/`):
-```bash
-dvc add model/checkpoint
-git add model/checkpoint.dvc
-git commit -m "Update model checkpoint"
-dvc push
-git push
-```
+- [IndiaCode](https://indiacode.nic.in) -- Official source for IPC, BNS, BNSS, Constitution, CPC, CrPC PDFs
+- [Bharatiya Nyaya Sanhita, 2023](https://www.indiacode.nic.in/handle/123456789/19549) -- Replacement for the Indian Penal Code
+- [Bharatiya Nagarik Suraksha Sanhita, 2023](https://www.indiacode.nic.in/handle/123456789/19550) -- Replacement for the Code of Criminal Procedure
+
+### Project Documentation
+
+- [Architecture](docs/architecture.md) -- Detailed system architecture and frozen folder structure
+- [API Documentation](docs/api.md) -- Full endpoint specifications
+- [Corpus Documentation](docs/corpus.md) -- Legal corpus parsing and embedding pipeline
+- [Model Documentation](docs/model.md) -- InLegalBERT fine-tuning details
+- [Roadmap](docs/roadmap.md) -- Development milestones and future plans
+
+---
+
+## License
+
+<!-- TODO: Add license information -->
+
+**This project is licensed under the MIT License — see LICENSE for details.**

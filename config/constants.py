@@ -1,6 +1,3 @@
-# -------------------------
-# InLegalBERT
-# -------------------------
 
 MAX_TOKENS = 512
 
@@ -8,9 +5,6 @@ CHUNK_STRIDE = 128
 
 INFERENCE_BATCH_SIZE = 8
 
-# -------------------------
-# Rendering
-# -------------------------
 
 ERROR_COLORS = {
     "spelling": "#FFD700",
@@ -37,3 +31,12 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB - generous for a scanned multi-page 
 MIN_CHARS_PER_PAGE = 200
 MIN_LINES_PER_PAGE = 3
 MAX_SCANNED_INDICATORS = 1
+
+
+MAX_PAGES = 100
+
+
+LARGE_PDF_PAGE_THRESHOLD = 15
+
+
+LARGE_PDF_REDUCED_SCALE = 1.5

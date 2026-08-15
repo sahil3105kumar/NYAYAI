@@ -3,3 +3,6 @@
     remote = local
 ['remote "local"']
     url = /home/sahil/dvc-storage/nyayai
+['remote "my-gdrive"']
+    url = gdrive://1hPB-Emu1POPk70RT6b66xI7mpYCIbjUl
+    gdrive_client_id = 578352058845-42bsv48mpi91c5f3recckm1v6o46qj61.apps.googleusercontent.com

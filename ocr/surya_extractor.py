@@ -1,18 +1,6 @@
-"""
-extracts text from scanned/image-only pdfs using surya OCR.
 
-surya natively gives line-level text + line-level bboxes which maps
-directly to LineSpan - no approximation needed anymore. this is the
-whole reason we switched from WordToken to LineSpan.
 
-Improvements:
-- Confidence tracking for each line
-- Layout detection for paragraphs/headings
-- Better noise filtering
-- Configurable DPI for accuracy/performance tradeoff
-- Batch processing with memory optimization
-"""
-
+import gc
 import logging
 import pypdfium2 as pdfium
 import re
@@ -24,29 +12,13 @@ from typing import Optional, List, Dict, Any, Tuple
 from surya.detection import DetectionPredictor
 from surya.recognition import RecognitionPredictor
 
+from config.constants import LARGE_PDF_PAGE_THRESHOLD, LARGE_PDF_REDUCED_SCALE
 from ocr.tokens import LineSpan
 
 logger = logging.getLogger(__name__)
 
 
-# module-level cache so surya's detection + recognition weights only get
-# loaded onto the GPU once per process, not once per document.
-#
-# before this fix: ocr/pipeline.py did `surya = SuryaExtractor()` fresh for
-# every document that had at least one scanned page, and __init__ used to
-# build brand new DetectionPredictor()/RecognitionPredictor() instances
-# every single call. those constructors push real model weights onto CUDA.
-# the old instance only gets freed once python's GC actually collects it -
-# refcounting usually handles that fast, but a Celery worker can pick up
-# the next scanned document before the previous predictor object is fully
-# torn down, and torch's caching allocator doesn't always hand freed VRAM
-# back cleanly under that kind of back-to-back churn. over a worker's
-# lifetime (many documents, some with scanned pages) this is exactly the
-# kind of thing that manifests as "works for the first few PDFs, OOMs
-# later" rather than an immediate crash.
-#
-# model/predict.py already solved this exact problem for InLegalBERT with
-# a module-level cache - this mirrors that pattern for surya.
+
 _CACHED_DETECTION_PREDICTOR: Optional[DetectionPredictor] = None
 _CACHED_RECOGNITION_PREDICTOR: Optional[RecognitionPredictor] = None
 
@@ -62,105 +34,67 @@ def _get_shared_predictors() -> Tuple[DetectionPredictor, RecognitionPredictor]:
     return _CACHED_DETECTION_PREDICTOR, _CACHED_RECOGNITION_PREDICTOR
 
 
+def unload_surya_models() -> None:
+    
+    global _CACHED_DETECTION_PREDICTOR, _CACHED_RECOGNITION_PREDICTOR
+
+    if _CACHED_DETECTION_PREDICTOR is None and _CACHED_RECOGNITION_PREDICTOR is None:
+        return
+
+    logger.info("unloading surya detection + recognition models")
+    _CACHED_DETECTION_PREDICTOR = None
+    _CACHED_RECOGNITION_PREDICTOR = None
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 class SuryaExtractor:
-    """
-    Extract text from scanned pages using Surya OCR.
     
-    Features:
-    - Configurable DPI (144-300)
-    - Batch processing to manage VRAM
-    - Confidence scores per line
-    - Layout analysis for paragraph boundaries
-    - Noise filtering
-    """
     
-    # Default rendering scale (2.0 = ~144 DPI)
-    # Surya accuracy improves up to ~200 DPI before diminishing returns
+    
     DEFAULT_SCALE = 2.0  # 144 DPI
     HIGH_ACCURACY_SCALE = 2.8  # ~200 DPI
     
     def __init__(
         self, 
-        scale: float = DEFAULT_SCALE,
-        chunk_size: int = 4,
+        scale: Optional[float] = None,
+        chunk_size: int = 2,
         min_confidence: float = 0.3,
         detect_layout: bool = True,
+        page_count: Optional[int] = None,
     ):
-        """
-        Initialize Surya extractor.
         
-        Args:
-            scale: Rendering scale for PDF pages (2.0 = 144 DPI, 2.8 = 200 DPI)
-            chunk_size: Number of pages to process at once (VRAM constraint)
-            min_confidence: Minimum confidence threshold for lines (0-1)
-            detect_layout: Whether to run layout analysis for paragraph detection
-        """
+        if scale is None:
+            if page_count is not None and page_count > LARGE_PDF_PAGE_THRESHOLD:
+                scale = LARGE_PDF_REDUCED_SCALE
+            else:
+                scale = self.DEFAULT_SCALE
         self.scale = scale
         self.chunk_size = chunk_size
         self.min_confidence = min_confidence
         self.detect_layout = detect_layout
         
-        # Reuse the process-wide detection/recognition models instead of
-        # loading fresh weights onto the GPU every time a SuryaExtractor is
-        # constructed (one per document, see ocr/pipeline.py) - see
-        # _get_shared_predictors() above for why this matters for VRAM.
+        
         self.detection_predictor, self.recognition_predictor = _get_shared_predictors()
         
-        # Cache for rendered pages of *this* extraction only, to avoid
-        # re-rendering a page if it's requested twice within the same
-        # extract() call. Deliberately instance-scoped (not module-level
-        # like the predictors above) and keyed only by page_no - a
-        # module-level cache would return page 3 of a previous, unrelated
-        # document when the current document also has a page 3. A fresh
-        # SuryaExtractor per document keeps that from happening, and
-        # clear_cache() (called automatically at the end of extract())
-        # drops the PIL images as soon as this document is done with them
-        # instead of waiting on __del__/GC.
+        
         self._image_cache: Dict[int, Image.Image] = {}
     
-    def _render_pages(
-        self, 
-        pdf_path: Path, 
-        page_numbers: List[int]
+    def _render_chunk(
+        self,
+        doc: "pdfium.PdfDocument",
+        page_numbers: List[int],
     ) -> List[Image.Image]:
-        """
-        Render requested pages as PIL Images.
         
-        Opens the PDF once, renders all requested pages, closes it.
-        One parse of the PDF header instead of one per page.
-        
-        Args:
-            pdf_path: Path to the PDF
-            page_numbers: List of page numbers (0-indexed)
-            
-        Returns:
-            List of PIL Images
-        """
         images = []
-        doc = pdfium.PdfDocument(pdf_path)
-        
-        try:
-            for page_no in page_numbers:
-                # Check cache first
-                if page_no in self._image_cache:
-                    images.append(self._image_cache[page_no])
-                    continue
-                
-                bitmap = doc[page_no].render(scale=self.scale) #type: ignore
-                img = bitmap.to_pil()
-                self._image_cache[page_no] = img
-                images.append(img)
-        finally:
-            doc.close()
-        
+        for page_no in page_numbers:
+            bitmap = doc[page_no].render(scale=self.scale) #type: ignore
+            images.append(bitmap.to_pil())
         return images
     
     def _filter_noise_lines(self, lines: List[Any], page_no: int) -> List[Tuple[str, Tuple[float, float, float, float], Optional[float]]]:
-        """
-        Filter out noise lines from Surya output.
         
-        Returns list of (text, bbox, confidence) tuples.
-        """
         filtered = []
         
         for line in lines:
@@ -209,11 +143,7 @@ class SuryaExtractor:
         return filtered
     
     def _detect_layout(self, lines: List[Tuple[str, Tuple[float, float, float, float], Optional[float]]]) -> List[Dict[str, Any]]:
-        """
-        Detect layout information from lines.
         
-        Returns list of dicts with layout metadata for each line.
-        """
         if not lines:
             return []
         
@@ -278,90 +208,123 @@ class SuryaExtractor:
         pdf_path: Path, 
         page_numbers: List[int]
     ) -> List[LineSpan]:
-        """
-        Run Surya OCR on the given page numbers.
         
-        Renders all pages with one PDF open, then feeds Surya in chunks
-        to avoid OOM on large scanned documents.
-        
-        Args:
-            pdf_path: Path to the PDF
-            page_numbers: List of page numbers (0-indexed)
-            
-        Returns:
-            List of LineSpan objects
-        """
         if not page_numbers:
             return []
         
-        # Render all pages
-        images = self._render_pages(pdf_path, page_numbers)
-        
         all_spans = []
+        failed_pages: List[int] = []
+        doc = pdfium.PdfDocument(pdf_path)
         
-        # Process in chunks
-        for i in range(0, len(images), self.chunk_size):
-            chunk_images = images[i:i + self.chunk_size]
-            chunk_page_nos = page_numbers[i:i + self.chunk_size]
+        try:
             
-            # Run detection + recognition
-            try:
-                results = self.recognition_predictor(
-                    chunk_images,
-                    [None] * len(chunk_images),
-                    self.detection_predictor,
-                )
-            except Exception as e:
-                print(f"Error processing pages {chunk_page_nos}: {e}")
-                continue
-            
-            for page_no, page_result in zip(chunk_page_nos, results):
-                # Filter noise lines
-                filtered = self._filter_noise_lines(
-                    page_result.text_lines, 
-                    page_no
-                )
+            pending: List[List[int]] = [
+                page_numbers[i:i + self.chunk_size]
+                for i in range(0, len(page_numbers), self.chunk_size)
+            ]
+
+            while pending:
+                chunk_page_nos = pending.pop(0)
+                chunk_images = self._render_chunk(doc, chunk_page_nos)
                 
-                if not filtered:
+                # Run detection + recognition
+                try:
+                    results = self.recognition_predictor(
+                        chunk_images,
+                        [None] * len(chunk_images),
+                        self.detection_predictor,
+                    )
+                except torch.cuda.OutOfMemoryError as e:
+                    chunk_images.clear()
+                    
+                    gc.collect()
+                    torch.cuda.empty_cache()
+
+                    if len(chunk_page_nos) > 1:
+                        mid = len(chunk_page_nos) // 2
+                        logger.warning(
+                            "CUDA OOM on pages %s (chunk of %d) - "
+                            "splitting into %d + %d pages and retrying",
+                            chunk_page_nos, len(chunk_page_nos),
+                            mid, len(chunk_page_nos) - mid,
+                        )
+                        pending.insert(0, chunk_page_nos[mid:])
+                        pending.insert(0, chunk_page_nos[:mid])
+                    else:
+                        
+                        logger.error(
+                            "CUDA OOM on page %d even at chunk size 1 - "
+                            "this page's text will be MISSING from OCR "
+                            "output: %s",
+                            chunk_page_nos[0], e,
+                        )
+                        failed_pages.append(chunk_page_nos[0])
+                    continue
+                except Exception as e:
+                    logger.warning(
+                        "Error processing pages %s: %s", chunk_page_nos, e
+                    )
+                    chunk_images.clear()
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    failed_pages.extend(chunk_page_nos)
                     continue
                 
-                # Detect layout if enabled
-                if self.detect_layout:
-                    layout_info = self._detect_layout(filtered)
-                else:
-                    layout_info = [{"is_heading": False, "is_paragraph_start": False} 
-                                  for _ in filtered]
-                
-                # Create LineSpans
-                for line_info, layout in zip(filtered, layout_info):
-                    text, bbox, confidence = line_info
-                    x0, y0, x1, y1 = bbox
-                    
-                    span = LineSpan(
-                        text=text,
-                        page_no=page_no,
-                        source="surya",
-                        x0=x0,
-                        y0=y0,
-                        x1=x1,
-                        y1=y1,
-                        confidence=confidence,
-                        is_heading=layout.get("is_heading", False),
-                        is_paragraph_start=layout.get("is_paragraph_start", False),
-                        vertical_gap=layout.get("gap", 0.0),
+                for page_no, page_result in zip(chunk_page_nos, results):
+                    # Filter noise lines
+                    filtered = self._filter_noise_lines(
+                        page_result.text_lines, 
+                        page_no
                     )
                     
-                    if span.is_valid():
-                        all_spans.append(span)
+                    if not filtered:
+                        continue
+                    
+                    # Detect layout if enabled
+                    if self.detect_layout:
+                        layout_info = self._detect_layout(filtered)
+                    else:
+                        layout_info = [{"is_heading": False, "is_paragraph_start": False} 
+                                      for _ in filtered]
+                    
+                    # Create LineSpans
+                    for line_info, layout in zip(filtered, layout_info):
+                        text, bbox, confidence = line_info
+                        x0, y0, x1, y1 = bbox
+                        
+                        span = LineSpan(
+                            text=text,
+                            page_no=page_no,
+                            source="surya",
+                            x0=x0,
+                            y0=y0,
+                            x1=x1,
+                            y1=y1,
+                            confidence=confidence,
+                            is_heading=layout.get("is_heading", False),
+                            is_paragraph_start=layout.get("is_paragraph_start", False),
+                            vertical_gap=layout.get("gap", 0.0),
+                        )
+                        
+                        if span.is_valid():
+                            all_spans.append(span)
+                
+                
+                chunk_images.clear()
+                gc.collect()
+        finally:
+            doc.close()
+
+        if failed_pages:
+            logger.error(
+                "Surya OCR failed on %d/%d page(s) of this document "
+                "(pages %s) - their text is missing from the result. "
+                "Check GPU memory (nvidia-smi) if this happens often.",
+                len(failed_pages), len(page_numbers), sorted(failed_pages),
+            )
         
-        # This document is done - drop the rendered PIL images now rather
-        # than waiting for this SuryaExtractor instance to be garbage
-        # collected (ocr/pipeline.py doesn't use the `with` form, so
-        # __exit__/clear_cache() would otherwise never run). Also ask torch
-        # to hand back any now-unused cached CUDA blocks - image batch
-        # sizes vary per document, so freeing here reduces fragmentation
-        # on the 6GB card instead of letting the allocator hold onto the
-        # largest batch it ever saw.
+        
         self.clear_cache()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -414,24 +377,11 @@ def extract_scanned(
     pdf_path: Path,
     page_numbers: List[int],
     scale: float = SuryaExtractor.DEFAULT_SCALE,
-    chunk_size: int = 4,
+    chunk_size: int = 2,
     min_confidence: float = 0.3,
     detect_layout: bool = True,
 ) -> List[LineSpan]:
-    """
-    Convenience function to extract text from scanned pages.
     
-    Args:
-        pdf_path: Path to the PDF
-        page_numbers: List of page numbers (0-indexed)
-        scale: Rendering scale (2.0 = 144 DPI)
-        chunk_size: Number of pages to process at once
-        min_confidence: Minimum confidence threshold
-        detect_layout: Whether to detect layout
-        
-    Returns:
-        List of LineSpans
-    """
     with SuryaExtractor(
         scale=scale,
         chunk_size=chunk_size,
