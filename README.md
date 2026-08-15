@@ -64,11 +64,11 @@ The full pipeline has been verified end-to-end against real sample FIR documents
     4. Deep Legal Analysis workspace (InLegalBERT results + Graph RAG chat)
 -->
 
-| View | Screenshot |
-|------|-----------|
-| Homepage -- Legal Chatbot | ![Homepage Chat](docs/images/homepage_chat.png) |
-| PDF Upload | ![Upload Page](docs/images/upload_page.png) |
-| PDF Error Inspector | ![Error Inspector](docs/images/error_inspector.png) |
+| View                              | Screenshot                                                |
+| --------------------------------- | --------------------------------------------------------- |
+| Homepage -- Legal Chatbot         | ![Homepage Chat](docs/images/homepage_chat.png)           |
+| PDF Upload                        | ![Upload Page](docs/images/upload_page.png)               |
+| PDF Error Inspector               | ![Error Inspector](docs/images/error_inspector.png)       |
 | Deep Legal Analysis and Case Chat | ![Analysis Workspace](docs/images/analysis_workspace.png) |
 
 > **Note:** To add screenshots, save the images to `docs/images/` and update the paths above.
@@ -111,11 +111,11 @@ The full pipeline has been verified end-to-end against real sample FIR documents
 
 The system comprises three independently runnable processes:
 
-| Process | Command | Purpose |
-|---------|---------|---------|
-| **API Server** | `uvicorn api.main:app` | HTTP endpoints, serves static files, preloads InLegalBERT models |
+| Process                 | Command                                 | Purpose                                                                      |
+| ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| **API Server**    | `uvicorn api.main:app`                | HTTP endpoints, serves static files, preloads InLegalBERT models             |
 | **Celery Worker** | `celery -A workers.celery_app worker` | Processes PDF analysis jobs asynchronously (OCR, error detection, rendering) |
-| **Frontend** | `npm run dev` (in `frontend/`) | React SPA with PDF.js canvas, error overlay, and chat interface |
+| **Frontend**      | `npm run dev` (in `frontend/`)      | React SPA with PDF.js canvas, error overlay, and chat interface              |
 
 Communication between the API server and the Celery worker uses a **filesystem broker** and **SQLite result backend** -- no Redis or RabbitMQ required.
 
@@ -193,16 +193,16 @@ nyayai/
 
 ## Prerequisites
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| **Python** | 3.10 | Pinned -- see [Dependency Matrix](#dependency-matrix) for version constraints |
-| **NVIDIA GPU** | CUDA-capable, 6 GB+ VRAM | Tested on RTX 4050. Required for Surya OCR and InLegalBERT inference |
-| **CUDA Toolkit** | 12.4 | Must match the PyTorch wheel specified in `pyproject.toml` |
-| **Docker** | 20.10+ | Required for running the Qdrant vector database |
-| **Node.js** | 20+ | Required for the frontend development server |
-| **uv** | Latest | Python package manager. Install via `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| **poppler-utils** | System package | Required by `pdf2image` for PDF rendering |
-| **Git LFS / DVC** | DVC 3.67+ | For retrieving model weights and data artifacts |
+| Requirement             | Version                  | Notes                                                                                  |
+| ----------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| **Python**        | 3.10                     | Pinned -- see[Dependency Matrix](#dependency-matrix) for version constraints            |
+| **NVIDIA GPU**    | CUDA-capable, 6 GB+ VRAM | Tested on RTX 4050. Required for Surya OCR and InLegalBERT inference                   |
+| **CUDA Toolkit**  | 12.4                     | Must match the PyTorch wheel specified in`pyproject.toml`                            |
+| **Docker**        | 20.10+                   | Required for running the Qdrant vector database                                        |
+| **Node.js**       | 20+                      | Required for the frontend development server                                           |
+| **uv**            | Latest                   | Python package manager. Install via`curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **poppler-utils** | System package           | Required by`pdf2image` for PDF rendering                                             |
+| **Git LFS / DVC** | DVC 3.67+                | For retrieving model weights and data artifacts                                        |
 
 ---
 
@@ -289,8 +289,8 @@ On first run, DVC will prompt for Google Drive authentication to access the shar
 
 **DVC Remote Configuration** (already set in `.dvc/config`):
 
-| Remote | URL | Purpose |
-|--------|-----|---------|
+| Remote        | URL                                            | Purpose                                                                   |
+| ------------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
 | `my-gdrive` | `gdrive://1hPB-Emu1POPk70RT6b66xI7mpYCIbjUl` | Shared Google Drive folder containing model checkpoint and data artifacts |
 
 If you need to configure a different remote (for example, a local filesystem or S3 bucket):
@@ -306,10 +306,10 @@ dvc remote default myremote
 
 ### What DVC Tracks
 
-| Artifact | DVC File | Size | Contents |
-|----------|----------|------|----------|
-| `model/checkpoint/` | `model/checkpoint.dvc` | ~436 MB (8 files) | Fine-tuned InLegalBERT weights, tokenizer, and config |
-| `data/` | `data.dvc` | Variable | Uploads, outputs, training data, Celery broker/results |
+| Artifact              | DVC File                 | Size              | Contents                                               |
+| --------------------- | ------------------------ | ----------------- | ------------------------------------------------------ |
+| `model/checkpoint/` | `model/checkpoint.dvc` | ~436 MB (8 files) | Fine-tuned InLegalBERT weights, tokenizer, and config  |
+| `data/`             | `data.dvc`             | Variable          | Uploads, outputs, training data, Celery broker/results |
 
 ### After a New Training Run
 
@@ -335,18 +335,18 @@ cp .env.example .env
 
 ### Required Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `RECOGNITION_BATCH_SIZE` | Surya OCR recognition batch size (tune for your VRAM) | `32` |
-| `DETECTOR_BATCH_SIZE` | Surya OCR detection batch size | `4` |
-| `TORCH_DEVICE` | PyTorch device | `cuda` |
-| `QDRANT_URL` | Qdrant vector database URL | `http://localhost:6333` |
-| `MISTRAL_API_KEY` | Mistral AI API key (for Graph RAG entity extraction) | `your_key_here` |
-| `NEO4J_URI` | Neo4j Aura connection URI | `neo4j+s://xxxxx.databases.neo4j.io` |
-| `NEO4J_USERNAME` | Neo4j username | `neo4j` |
-| `NEO4J_PASSWORD` | Neo4j password | `your_password_here` |
-| `NEO4J_DATABASE` | Neo4j database name | `neo4j` |
-| `HF_TOKEN` | Hugging Face access token (for model downloads) | `hf_xxxxx` |
+| Variable                   | Description                                           | Example                                |
+| -------------------------- | ----------------------------------------------------- | -------------------------------------- |
+| `RECOGNITION_BATCH_SIZE` | Surya OCR recognition batch size (tune for your VRAM) | `32`                                 |
+| `DETECTOR_BATCH_SIZE`    | Surya OCR detection batch size                        | `4`                                  |
+| `TORCH_DEVICE`           | PyTorch device                                        | `cuda`                               |
+| `QDRANT_URL`             | Qdrant vector database URL                            | `http://localhost:6333`              |
+| `MISTRAL_API_KEY`        | Mistral AI API key (for Graph RAG entity extraction)  | `your_key_here`                      |
+| `NEO4J_URI`              | Neo4j Aura connection URI                             | `neo4j+s://xxxxx.databases.neo4j.io` |
+| `NEO4J_USERNAME`         | Neo4j username                                        | `neo4j`                              |
+| `NEO4J_PASSWORD`         | Neo4j password                                        | `your_password_here`                 |
+| `NEO4J_DATABASE`         | Neo4j database name                                   | `neo4j`                              |
+| `HF_TOKEN`               | Hugging Face access token (for model downloads)       | `hf_xxxxx`                           |
 
 The Mistral and Neo4j credentials are only required for the Chat and Graph RAG features. The core PDF error detection pipeline works without them.
 
@@ -427,21 +427,21 @@ The model training was also conducted in cloud notebook environments for GPU acc
   the training methodology and reproduce results.
 -->
 
-| Platform | Link | Description |
-|----------|------|-------------|
-| Google Colab | [Training Notebook](#) | <!-- TODO: Add Colab link --> Full training pipeline with data generation, fine-tuning, and evaluation |
-| Kaggle | [Training Notebook](#) | <!-- TODO: Add Kaggle link --> Alternative training environment with Kaggle GPU resources |
+| Platform     | Link                                                                                                       | Description                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Google Colab | [Training Notebook](#https://colab.research.google.com/drive/1okrY3GGlGIzr29-JQqgth7AkAhBYgi7M?usp=sharing) | Full training pipeline with data generation, fine-tuning, and evaluation |
+| Kaggle       | [Training Notebook](#https://www.kaggle.com/code/pryans/layer2-nyayai/)                                     | Alternative training environment with Kaggle GPU resources               |
 
 > **Note:** Replace the placeholder links above with the actual URLs to your published training notebooks.
 
 ### Training Configuration
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Base model | `law-ai/InLegalBERT` | Pre-trained on Indian legal text (IIT Kharagpur) |
-| Task | Token classification (BIO scheme) | 9 labels: O, B-SPELLING, I-SPELLING, B-GRAMMAR, I-GRAMMAR, B-CITATION, I-CITATION, B-ENTITY, I-ENTITY |
-| Max sequence length | 512 tokens | Sliding window with stride 128 for long documents |
-| Checkpoint size | ~436 MB | Weights + tokenizer + config |
+| Parameter           | Value                             | Notes                                                                                                 |
+| ------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Base model          | `law-ai/InLegalBERT`            | Pre-trained on Indian legal text (IIT Kharagpur)                                                      |
+| Task                | Token classification (BIO scheme) | 9 labels: O, B-SPELLING, I-SPELLING, B-GRAMMAR, I-GRAMMAR, B-CITATION, I-CITATION, B-ENTITY, I-ENTITY |
+| Max sequence length | 512 tokens                        | Sliding window with stride 128 for long documents                                                     |
+| Checkpoint size     | ~436 MB                           | Weights + tokenizer + config                                                                          |
 
 ---
 
@@ -457,14 +457,14 @@ The `test_qdrant_live.py` file is excluded by default because it is a live integ
 
 ### Test Coverage
 
-| Test File | What It Tests | Mocking Strategy |
-|-----------|--------------|------------------|
-| `test_rules.py` | Citation, entity, spelling, and cross-reference checkers | Mocks corpus lookup and spaCy NER |
-| `test_model.py` | InLegalBERT preprocessing, inference, and postprocessing | Mocks tokenizer and model (no GPU) |
-| `test_pipeline.py` | Pipeline orchestration (merge, deduplicate, sort) | Mocks ML and rules layers |
-| `test_api.py` | FastAPI endpoint contracts | Mocks Celery task dispatch |
-| `test_ocr.py` | Native PDF text extraction | Uses a small reportlab-generated sample PDF |
-| `test_parser.py` | Corpus parsers against real act PDFs | No mocking -- parses actual PDFs (slow, ~4-5 min) |
+| Test File            | What It Tests                                            | Mocking Strategy                                  |
+| -------------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| `test_rules.py`    | Citation, entity, spelling, and cross-reference checkers | Mocks corpus lookup and spaCy NER                 |
+| `test_model.py`    | InLegalBERT preprocessing, inference, and postprocessing | Mocks tokenizer and model (no GPU)                |
+| `test_pipeline.py` | Pipeline orchestration (merge, deduplicate, sort)        | Mocks ML and rules layers                         |
+| `test_api.py`      | FastAPI endpoint contracts                               | Mocks Celery task dispatch                        |
+| `test_ocr.py`      | Native PDF text extraction                               | Uses a small reportlab-generated sample PDF       |
+| `test_parser.py`   | Corpus parsers against real act PDFs                     | No mocking -- parses actual PDFs (slow, ~4-5 min) |
 
 ### Fast Iteration (skip slow parser tests)
 
@@ -509,11 +509,11 @@ Both are local files with zero infrastructure overhead. To scale beyond a single
 
 The system loads approximately 1.2 GB of model weights onto the GPU:
 
-| Model | Size | Loading Strategy |
-|-------|------|-----------------|
-| Surya Detection (`vikp/surya_det3`) | ~400 MB | Module-level cache, loaded once per process |
+| Model                                   | Size    | Loading Strategy                            |
+| --------------------------------------- | ------- | ------------------------------------------- |
+| Surya Detection (`vikp/surya_det3`)   | ~400 MB | Module-level cache, loaded once per process |
 | Surya Recognition (`vikp/surya_rec2`) | ~400 MB | Module-level cache, loaded once per process |
-| InLegalBERT (fine-tuned) | ~436 MB | Module-level cache, loaded once per process |
+| InLegalBERT (fine-tuned)                | ~436 MB | Module-level cache, loaded once per process |
 
 All three models use **process-wide singleton caches** so that a Celery worker processing many documents over its lifetime pays the model-load cost only once. Without this, each document would reload all weights, and back-to-back processing could exhaust VRAM before the previous instance was garbage collected.
 
@@ -531,8 +531,8 @@ The router (`ocr/router.py`) examines each page and decides which extractor to u
 Errors are detected by two independent systems that are merged and deduplicated:
 
 1. **ML-based detection** (InLegalBERT): The document text is chunked into 512-token windows with a stride of 128. Each chunk is classified with a BIO token classification head. The postprocessor converts BIO label sequences back to ErrorSpans with the original bounding box coordinates.
-
 2. **Rule-based detection**: Four pluggable checkers registered in `rules/registry.py`:
+
    - **Citation Checker:** Validates statute references against the Qdrant corpus using regex extraction and vector similarity search.
    - **Entity Checker:** Uses spaCy NER to extract person/location/organization entities and rapidfuzz clustering to detect inconsistent spellings of the same entity across the document.
    - **Spelling Checker:** Legal vocabulary-aware spell checking that avoids false positives on domain-specific terms.
@@ -546,23 +546,23 @@ The merge step combines ML and rule-based errors, and the deduplication step rem
 
 These versions are pinned in `pyproject.toml` due to known incompatibilities. Do not upgrade without testing.
 
-| Package | Version | Reason for Pinning |
-|---------|---------|-------------------|
-| `torch` | `2.4.0+cu124` | Matched to `transformers==4.48.0` and CUDA 12.4 toolkit |
-| `transformers` | `4.48.0` | Versions newer than 4.48.0 break Surya's `SuryaOCRConfig` with `KeyError: 'encoder'` |
-| `surya-ocr` | `0.9.3` | Surya 0.20+ requires a separate vLLM server; 0.9.3 is self-contained |
-| `qdrant-client` | `1.17.1` | Must stay within one minor version of the Qdrant server image |
-| `fastapi` | `0.115.0` | API framework |
-| `celery` | `5.4.0` | Async job queue with filesystem broker + SQLite backend |
-| `pydantic` / `pydantic-settings` | `2.8.2` / `2.5.2` | Settings management and request/response schemas |
+| Package                              | Version               | Reason for Pinning                                                                      |
+| ------------------------------------ | --------------------- | --------------------------------------------------------------------------------------- |
+| `torch`                            | `2.4.0+cu124`       | Matched to`transformers==4.48.0` and CUDA 12.4 toolkit                                |
+| `transformers`                     | `4.48.0`            | Versions newer than 4.48.0 break Surya's`SuryaOCRConfig` with `KeyError: 'encoder'` |
+| `surya-ocr`                        | `0.9.3`             | Surya 0.20+ requires a separate vLLM server; 0.9.3 is self-contained                    |
+| `qdrant-client`                    | `1.17.1`            | Must stay within one minor version of the Qdrant server image                           |
+| `fastapi`                          | `0.115.0`           | API framework                                                                           |
+| `celery`                           | `5.4.0`             | Async job queue with filesystem broker + SQLite backend                                 |
+| `pydantic` / `pydantic-settings` | `2.8.2` / `2.5.2` | Settings management and request/response schemas                                        |
 
 ### Frontend Dependencies
 
-| Package | Version |
-|---------|---------|
-| `react` | `^19.2.7` |
+| Package        | Version      |
+| -------------- | ------------ |
+| `react`      | `^19.2.7`  |
 | `pdfjs-dist` | `^6.1.200` |
-| `vite` | `^8.1.4` |
+| `vite`       | `^8.1.4`   |
 
 Full dependency lists are in `pyproject.toml` (Python) and `frontend/package.json` (JavaScript).
 
@@ -572,42 +572,30 @@ Full dependency lists are in `pyproject.toml` (Python) and `frontend/package.jso
 
 ### Core OCR Error Detection Flow
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/upload` | POST | Upload a PDF for processing. Returns `{ job_id }` |
-| `/status/{job_id}` | GET | Poll processing status. Returns `{ status }` (PENDING, SUCCESS, FAILURE) |
-| `/result/{job_id}` | GET | Retrieve the error report, annotated PDF URL, and HTML report URL |
-| `/health` | GET | Health check |
+| Endpoint             | Method | Description                                                               |
+| -------------------- | ------ | ------------------------------------------------------------------------- |
+| `/upload`          | POST   | Upload a PDF for processing. Returns`{ job_id }`                        |
+| `/status/{job_id}` | GET    | Poll processing status. Returns`{ status }` (PENDING, SUCCESS, FAILURE) |
+| `/result/{job_id}` | GET    | Retrieve the error report, annotated PDF URL, and HTML report URL         |
+| `/health`          | GET    | Health check                                                              |
 
 ### InLegalBERT Analysis
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/analyze/lsi` | POST | Legal Statute Identification -- identifies applicable BNS/IPC sections |
-| `/analyze/rr` | POST | Rhetorical Role classification -- sentence-level structural analysis |
-| `/analyze/cjpe` | POST | Court Judgment Prediction and Explanation |
-| `/analyze/full` | POST | Run all three analyses concurrently |
+| Endpoint          | Method | Description                                                            |
+| ----------------- | ------ | ---------------------------------------------------------------------- |
+| `/analyze/lsi`  | POST   | Legal Statute Identification -- identifies applicable BNS/IPC sections |
+| `/analyze/rr`   | POST   | Rhetorical Role classification -- sentence-level structural analysis   |
+| `/analyze/cjpe` | POST   | Court Judgment Prediction and Explanation                              |
+| `/analyze/full` | POST   | Run all three analyses concurrently                                    |
 
 ### Chat and Knowledge Graph
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/chat` | POST | General legal Q&A via the LangGraph agent |
-| `/api/v1/chat/ingest` | POST | Ingest a processed PDF into the Neo4j knowledge graph |
+| Endpoint                | Method | Description                                           |
+| ----------------------- | ------ | ----------------------------------------------------- |
+| `/api/v1/chat`        | POST   | General legal Q&A via the LangGraph agent             |
+| `/api/v1/chat/ingest` | POST   | Ingest a processed PDF into the Neo4j knowledge graph |
 
 Detailed API documentation with request/response schemas is available in `docs/api.md`.
-
----
-
-## Known Limitations
-
-- **Surya OCR throughput:** Approximately 10 seconds per scanned page on an RTX 4050. The async job architecture hides this latency from the user, but it remains the primary bottleneck for large scanned documents.
-- **Indian NER accuracy:** spaCy's `en_core_web_sm` handles Indian names inconsistently -- the same name can be tagged as PERSON in one sentence and GPE (place) in another, sending it to the wrong clustering bucket in the entity checker. A fine-tuned Indian legal NER model would significantly improve entity consistency detection.
-- **No correction suggestions for ML-detected errors:** The ML model identifies error spans but does not generate corrections. Citation errors do include suggestions from the corpus lookup.
-- **BNSS First Schedule coverage:** 5 of approximately 350 entries (section numbers 128, 129, 130, 138, 307) are not extracted from the source PDF due to formatting edge cases.
-- **No authentication on the API:** Suitable for local single-user development. Authentication must be added before any networked deployment.
-- **No containerized deployment:** No production Dockerfile or cloud deployment configuration exists yet. The application is designed for local development use.
-- **Memory pressure on large PDFs:** Processing very large scanned PDFs (50+ pages) on a 6 GB GPU can approach VRAM limits. The system processes pages in chunks with explicit memory cleanup, but extremely large documents may require reducing the batch size or image resolution.
 
 ---
 
@@ -642,4 +630,4 @@ Detailed API documentation with request/response schemas is available in `docs/a
 
 <!-- TODO: Add license information -->
 
-This project is currently unlicensed. Add a LICENSE file to specify terms of use and distribution.
+**This project is licensed under the MIT License — see LICENSE for details.**
