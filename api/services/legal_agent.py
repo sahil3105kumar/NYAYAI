@@ -60,13 +60,22 @@ def analyze_with_inlegalbert(text: str) -> str:
         return f"Backend analysis failed: {e}. Please ensure the FastAPI server is running."
 
 @tool
-def query_uploaded_case_file(question: str) -> str:
+def query_uploaded_case_file(question: str, config: RunnableConfig) -> str:
     """
     Use this tool ONLY when the user asks a specific question about an uploaded 
     case file, FIR, or legal document stored in the Neo4j Knowledge Graph.
     """
-    logger.info(f"[Agent] 🔍 Querying Neo4j Knowledge Graph: {question}...")
-    return query_case_file(question)
+    job_id = (config.get("configurable") or {}).get("job_id")
+    logger.info(f"[Agent] 🔍 Querying Neo4j Knowledge Graph (job_id={job_id}): {question}...")
+
+    if not job_id:
+        return (
+            "No job_id is associated with this conversation, so I can't look up "
+            "a specific case file. Please make sure the document has been "
+            "processed and its job_id is passed to this chat session."
+        )
+
+    return query_case_file(question, job_id)
 
 # Combine all 3 tools
 tools = [draft_legal_document, analyze_with_inlegalbert, query_uploaded_case_file]

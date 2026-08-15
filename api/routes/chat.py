@@ -13,9 +13,12 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    
+    """
+    Send a message to the NyayAI legal agent.
+    The agent routes internally to Graph RAG, InLegalBERT, or drafting tools.
+    """
     try:
-        #
+        
         from api.services.legal_agent import chat_with_nyayai
 
         reply = chat_with_nyayai(req.message, thread_id=req.thread_id, job_id=req.job_id)
